@@ -1,0 +1,15 @@
+# Backend (Python)
+backend/venv/
+backend/__pycache__/
+backend/model/*.keras
+backend/model/*.h5
+backend/model/class_names.json
+*.pyc
+
+# Mobile app (Node/Expo)
+mobile-app/node_modules/
+mobile-app/.expo/
+mobile-app/dist/
+
+# OS
+.DS_Store

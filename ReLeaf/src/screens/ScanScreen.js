@@ -7,12 +7,10 @@ import { colors, type, spacing, radii } from "../theme/theme";
 import PrimaryButton from "../components/PrimaryButton";
 import SecondaryButton from "../components/SecondaryButton";
 import { identifyItem } from "../api/predict";
-import { useImpact } from "../context/ImpactContext";
 
 export default function ScanScreen({ navigation }) {
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
-  const { recordScan } = useImpact();
 
   async function takePhoto() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -38,7 +36,6 @@ export default function ScanScreen({ navigation }) {
     setLoading(true);
     try {
       const result = await identifyItem(imageUri);
-      recordScan();
       navigation.replace("Result", { imageUri, result });
     } catch (err) {
       Alert.alert(

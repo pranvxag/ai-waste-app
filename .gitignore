@@ -4,6 +4,7 @@ backend/__pycache__/
 backend/model/*.keras
 backend/model/*.h5
 backend/model/class_names.json
+backend/.env
 *.pyc
 
 # Mobile app (Node/Expo)

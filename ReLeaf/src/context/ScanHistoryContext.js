@@ -1,39 +1,56 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BUCKET_META } from "../utils/formatting";
 
-const STORAGE_KEY = "impact_stats_v1";
+const STORAGE_KEY = "scan_history_v1";
 
-const ImpactContext = createContext(null);
+const ScanHistoryContext = createContext(null);
 
-export function ImpactProvider({ children }) {
-  const [itemsScanned, setItemsScanned] = useState(0);
+export function ScanHistoryProvider({ children }) {
+  const [scans, setScans] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((value) => {
-      if (value) setItemsScanned(JSON.parse(value).itemsScanned || 0);
+      if (value) setScans(JSON.parse(value).scans || []);
       setLoaded(true);
     });
   }, []);
 
   useEffect(() => {
     if (!loaded) return; // avoid overwriting stored value before it's loaded
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ itemsScanned }));
-  }, [itemsScanned, loaded]);
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ scans }));
+  }, [scans, loaded]);
 
-  function recordScan() {
-    setItemsScanned((n) => n + 1);
+  function addScan(scanData) {
+    const entry = {
+      id: `scan_${Date.now()}`,
+      timestamp: Date.now(),
+      ...scanData,
+    };
+    setScans((prev) => [entry, ...prev]);
   }
 
+  const totalScans = scans.length;
+
+  const countsByBucket = Object.keys(BUCKET_META).reduce((counts, bucket) => {
+    counts[bucket] = 0;
+    return counts;
+  }, {});
+  scans.forEach((scan) => {
+    const bucket = scan.bucketMeta?.bucket;
+    if (bucket && bucket in countsByBucket) countsByBucket[bucket] += 1;
+  });
+
   return (
-    <ImpactContext.Provider value={{ itemsScanned, recordScan }}>
+    <ScanHistoryContext.Provider value={{ scans, addScan, totalScans, countsByBucket }}>
       {children}
-    </ImpactContext.Provider>
+    </ScanHistoryContext.Provider>
   );
 }
 
-export function useImpact() {
-  const ctx = useContext(ImpactContext);
-  if (!ctx) throw new Error("useImpact must be used within an ImpactProvider");
+export function useScanHistory() {
+  const ctx = useContext(ScanHistoryContext);
+  if (!ctx) throw new Error("useScanHistory must be used within a ScanHistoryProvider");
   return ctx;
 }

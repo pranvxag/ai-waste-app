@@ -5,10 +5,10 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, type, spacing, radii } from "../theme/theme";
 import PrimaryButton from "../components/PrimaryButton";
 import StepItem from "../components/StepItem";
-import { useImpact } from "../context/ImpactContext";
+import { useScanHistory } from "../context/ScanHistoryContext";
 
 export default function HomeScreen({ navigation }) {
-  const { itemsScanned } = useImpact();
+  const { totalScans } = useScanHistory();
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
@@ -31,11 +31,11 @@ export default function HomeScreen({ navigation }) {
           onPress={() => navigation.navigate("Scan")}
         />
 
-        {itemsScanned > 0 && (
+        {totalScans > 0 && (
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{itemsScanned}</Text>
+            <Text style={styles.statNumber}>{totalScans}</Text>
             <Text style={type.label}>
-              {itemsScanned === 1 ? "item identified so far" : "items identified so far"}
+              {totalScans === 1 ? "item identified so far" : "items identified so far"}
             </Text>
           </View>
         )}

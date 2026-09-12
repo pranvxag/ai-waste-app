@@ -31,7 +31,7 @@ ReLeaf/
       theme.js
       useAppFonts.js
     context/
-      ImpactContext.js
+      ScanHistoryContext.js
     api/
       config.js
       predict.js

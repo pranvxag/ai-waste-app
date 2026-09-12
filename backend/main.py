@@ -23,7 +23,9 @@ import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
+from pydantic import BaseModel
 
+from llm_service import get_ai_reuse_ideas, get_youtube_link
 from waste_data import get_waste_info
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model", "waste_classifier.keras")
@@ -109,3 +111,30 @@ async def predict(file: UploadFile = File(...)):
         "disposal": info["disposal"],
         "reuse_ideas": info["reuse_ideas"],
     }
+
+
+class EnhanceReuseRequest(BaseModel):
+    predicted_class: str
+    category: str
+
+
+@app.post("/enhance-reuse")
+def enhance_reuse(payload: EnhanceReuseRequest):
+    """Optional AI-enhancement layer: a few LLM-generated reuse ideas, each
+    paired with a real YouTube tutorial link where one is found.
+
+    This is additive on top of the static reuse_ideas from /predict, and is
+    allowed to fail quietly - if the AI/YouTube services are down or the API
+    keys aren't configured, this returns an empty list with a 200 rather than
+    a 500, so it never breaks the core scan -> identify flow."""
+    try:
+        ideas = get_ai_reuse_ideas(payload.predicted_class, payload.category)
+
+        ai_ideas = []
+        for idea in ideas:
+            video = get_youtube_link(f"{idea} DIY tutorial")
+            ai_ideas.append({"idea": idea, "video": video})
+
+        return {"ai_ideas": ai_ideas}
+    except Exception:
+        return {"ai_ideas": []}

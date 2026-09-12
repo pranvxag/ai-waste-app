@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -7,11 +7,27 @@ import PrimaryButton from "../components/PrimaryButton";
 import MaterialIdCard from "../components/MaterialIdCard";
 import ReuseIdeaCard from "../components/ReuseIdeaCard";
 import { getBucketMeta, formatClassName } from "../utils/formatting";
+import { useScanHistory } from "../context/ScanHistoryContext";
 
 export default function ResultScreen({ route, navigation }) {
   const { imageUri, result } = route.params;
   const bucketMeta = getBucketMeta(result.predicted_class);
   const className = formatClassName(result.predicted_class);
+  const { addScan } = useScanHistory();
+
+  // ScanScreen navigates here with `replace`, so a fresh Result screen is
+  // mounted for every new result - record it once, on mount.
+  useEffect(() => {
+    addScan({
+      imageUri,
+      predictedClass: result.predicted_class,
+      confidence: result.confidence,
+      bucketMeta,
+      disposal: result.disposal,
+      reuseIdeas: result.reuse_ideas,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>

@@ -1,14 +1,49 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import React, { useCallback, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Image, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, type, spacing, radii } from "../theme/theme";
-import PrimaryButton from "../components/PrimaryButton";
-import StepItem from "../components/StepItem";
 import { useScanHistory } from "../context/ScanHistoryContext";
+import { formatClassName } from "../utils/formatting";
+
+const EXAMPLES = [
+  { label: "Glass bottle", icon: "bottle-wine" },
+  { label: "Battery", icon: "battery-outline" },
+  { label: "Cardboard box", icon: "package-variant-closed" },
+  { label: "Old shoes", icon: "shoe-sneaker" },
+];
+
+const ECO_FACTS = [
+  "Recycling one aluminum can saves enough energy to power a TV for about three hours.",
+  "It can take up to 1,000 years for a plastic bottle to fully decompose in a landfill.",
+  "Composting food scraps can cut what a household sends to landfill by up to 30%.",
+  "Glass can be recycled endlessly without ever losing its quality or purity.",
+];
 
 export default function HomeScreen({ navigation }) {
-  const { totalScans } = useScanHistory();
+  const { scans, totalScans } = useScanHistory();
+  const [fact, setFact] = useState(ECO_FACTS[0]);
+
+  // Pick a new random fact every time the Home tab comes into focus.
+  useFocusEffect(
+    useCallback(() => {
+      setFact(ECO_FACTS[Math.floor(Math.random() * ECO_FACTS.length)]);
+    }, [])
+  );
+
+  function openPastScan(scan) {
+    navigation.navigate("Result", {
+      imageUri: scan.imageUri,
+      result: {
+        predicted_class: scan.predictedClass,
+        confidence: scan.confidence,
+        disposal: scan.disposal,
+        reuse_ideas: scan.reuseIdeas,
+      },
+      fromHistory: true,
+    });
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
@@ -25,41 +60,69 @@ export default function HomeScreen({ navigation }) {
           </Text>
         </View>
 
-        <PrimaryButton
-          label="Scan an item"
-          icon={<MaterialCommunityIcons name="camera" size={20} color={colors.white} />}
-          onPress={() => navigation.navigate("Scan")}
-        />
-
-        {totalScans > 0 && (
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{totalScans}</Text>
-            <Text style={type.label}>
-              {totalScans === 1 ? "item identified so far" : "items identified so far"}
-            </Text>
+        {scans.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[type.h2, styles.sectionTitle]}>Recently scanned</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {scans.slice(0, 5).map((scan) => (
+                <RecentScanThumb key={scan.id} scan={scan} onPress={() => openPastScan(scan)} />
+              ))}
+            </ScrollView>
           </View>
         )}
 
-        <View style={styles.howItWorks}>
-          <Text style={[type.h2, { marginBottom: spacing.md }]}>How it works</Text>
-          <StepItem
-            number="1"
-            title="Snap a photo"
-            description="Point your camera at the item you want to throw away."
-          />
-          <StepItem
-            number="2"
-            title="Get identified"
-            description="The app recognizes the material and shows the right disposal category."
-          />
-          <StepItem
-            number="3"
-            title="Reuse or recycle"
-            description="See specific reuse ideas for that item, or exactly how to dispose of it."
-          />
+        <View style={styles.section}>
+          <Text style={[type.h2, styles.sectionTitle]}>Try scanning these</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {EXAMPLES.map((example) => (
+              <View key={example.label} style={styles.exampleCard}>
+                <MaterialCommunityIcons name={example.icon} size={28} color={colors.ink} />
+                <Text style={[type.label, { marginTop: spacing.xs, textAlign: "center" }]}>
+                  {example.label}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
         </View>
+
+        <View style={styles.section}>
+          <Text style={[type.h2, styles.sectionTitle]}>Did you know?</Text>
+          <View style={styles.factCard}>
+            <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={colors.accent} />
+            <Text style={[type.body, { marginTop: spacing.xs }]}>{fact}</Text>
+          </View>
+        </View>
+
+        <Pressable
+          style={({ pressed }) => [styles.impactCard, pressed && styles.impactCardPressed]}
+          onPress={() => navigation.navigate("Impact")}
+        >
+          <View style={styles.impactIconWrap}>
+            <MaterialCommunityIcons name="leaf" size={22} color={colors.white} />
+          </View>
+          <View style={styles.impactText}>
+            <Text style={type.h3}>Your impact</Text>
+            <Text style={type.body}>
+              {totalScans > 0
+                ? `You've identified ${totalScans} ${totalScans === 1 ? "item" : "items"} so far.`
+                : "Scan your first item to start tracking your impact."}
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={22} color={colors.inkSoft} />
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function RecentScanThumb({ scan, onPress }) {
+  return (
+    <Pressable onPress={onPress} style={styles.thumbWrap}>
+      <Image source={{ uri: scan.imageUri }} style={styles.thumbImage} />
+      <Text style={type.caption} numberOfLines={1}>
+        {formatClassName(scan.predictedClass)}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -89,21 +152,64 @@ const styles = StyleSheet.create({
   headline: {
     ...type.h1,
   },
-  statCard: {
+  section: {
+    gap: spacing.sm,
+  },
+  sectionTitle: {
+    marginBottom: 0,
+  },
+  thumbWrap: {
+    width: 76,
+    marginRight: spacing.sm,
+    gap: 4,
+  },
+  thumbImage: {
+    width: 72,
+    height: 72,
+    borderRadius: radii.sm,
+    backgroundColor: colors.border,
+  },
+  exampleCard: {
+    width: 110,
     backgroundColor: colors.surface,
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
+    marginRight: spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  factCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  impactCard: {
     flexDirection: "row",
-    alignItems: "baseline",
-    gap: spacing.xs,
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
   },
-  statNumber: {
-    ...type.h1,
-    fontSize: 28,
+  impactCardPressed: {
+    backgroundColor: colors.border,
   },
-  howItWorks: {
-    marginTop: spacing.sm,
+  impactIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  impactText: {
+    flex: 1,
+    gap: 2,
   },
 });

@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, type, spacing, radii } from "../theme/theme";
 import PrimaryButton from "../components/PrimaryButton";
 import SecondaryButton from "../components/SecondaryButton";
+import CloseButton from "../components/CloseButton";
 import { identifyItem } from "../api/predict";
 
 export default function ScanScreen({ navigation }) {
@@ -49,6 +50,7 @@ export default function ScanScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+      <CloseButton onPress={() => navigation.popToTop()} />
       <View style={styles.content}>
         <Text style={type.h2}>Scan an item</Text>
         <Text style={[type.body, { marginBottom: spacing.md }]}>

@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "./config";
+import { getApiBaseUrl } from "./config";
 
 /**
  * Sends the photo at `imageUri` to the backend and returns the parsed JSON result:
@@ -12,7 +12,8 @@ export async function identifyItem(imageUri) {
     type: "image/jpeg",
   });
 
-  const response = await fetch(`${API_BASE_URL}/predict`, {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/predict`, {
     method: "POST",
     body: formData,
     // Do not set Content-Type manually - fetch sets the multipart boundary itself.
@@ -24,4 +25,26 @@ export async function identifyItem(imageUri) {
   }
 
   return response.json();
+}
+
+/**
+ * Asks the backend's optional AI-enhancement layer for a few extra reuse
+ * ideas (each possibly paired with a YouTube tutorial link) for an
+ * already-identified item. Returns the ai_ideas array, e.g.:
+ * [{ idea: string, video: { title, url, thumbnail } | null }, ...]
+ */
+export async function getEnhancedIdeas(predictedClass, category) {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/enhance-reuse`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ predicted_class: predictedClass, category }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Server returned ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.ai_ideas || [];
 }

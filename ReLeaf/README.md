@@ -51,9 +51,11 @@ ReLeaf/
 
 ## 4. Point it at your backend
 
-Open `src/api/config.js` and set `API_BASE_URL` to wherever your FastAPI backend is reachable —
-your laptop's local IP (e.g. `http://192.168.1.5:8000`) if your phone's on the same WiFi, or your
-ngrok URL. See the backend README for how to find this.
+`src/api/config.js`'s `API_BASE_URL` is just the fallback default — the app reads the backend
+URL from AsyncStorage first (see `getApiBaseUrl()`/`setApiBaseUrl()` in that file), which you set
+from the **Settings tab** inside the app itself (no rebuild needed to switch networks). Editing
+`API_BASE_URL` in the source is only useful for changing what a fresh install starts with.
+See the backend README for how to find your laptop's local IP or set up an ngrok URL.
 
 ## 5. Run it
 
@@ -66,8 +68,8 @@ Scan the QR code with the Expo Go app on your phone (same WiFi network as your l
 ## What to test first
 
 1. Home screen loads with fonts showing correctly (Space Grotesk headings, Inter body text) — if fonts look like the system default, the font loading hook isn't working; check the console for errors.
-2. Tap "Scan an item" → try both "Take photo" and "Choose from gallery".
-3. After picking an image, tap "Identify this item" — this calls your backend. If it fails, double check `API_BASE_URL` and that your backend server is actually running and reachable from your phone (same WiFi is the most common gotcha).
+2. Tap the camera button in the middle of the tab bar → try both "Take photo" and "Choose from gallery".
+3. After picking an image, tap "Identify this item" — this calls your backend. If it fails, double check the Backend URL in the Settings tab and that your backend server is actually running and reachable from your phone (same WiFi is the most common gotcha).
 4. Confirm the Result screen shows the colored category badge, disposal text, and reuse idea cards scrolling horizontally.
 5. Go back to Home — the "items identified so far" counter should now show 1, and should persist even if you close and reopen the app (it's saved via AsyncStorage).
 

@@ -16,9 +16,8 @@ npx expo install @react-navigation/native @react-navigation/native-stack react-n
 npx expo install expo-image-picker
 npx expo install @react-native-async-storage/async-storage
 npx expo install @expo-google-fonts/space-grotesk @expo-google-fonts/inter expo-font
+npx expo install @expo/vector-icons
 ```
-
-(`@expo/vector-icons` comes bundled with Expo already — no install needed.)
 
 ## 3. Copy in the provided files
 

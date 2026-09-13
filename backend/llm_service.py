@@ -24,9 +24,11 @@ YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
 
 # OpenAI-compatible endpoint - https://console.groq.com/docs/openai
 GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
-# Check https://console.groq.com/docs/models for the current recommended
-# model name if this one gets deprecated/renamed.
-GROQ_MODEL = "llama-3.3-70b-versatile"
+# llama-3.3-70b-versatile was retired from Groq's lineup (404s as of testing
+# on 2026-09-13) - swap to whatever's current at https://console.groq.com/docs/models
+# if this one gets deprecated/renamed too. "openai/gpt-oss-120b" is a larger/
+# slower alternative if you want higher-quality ideas at the cost of latency.
+GROQ_MODEL = "openai/gpt-oss-20b"
 
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 

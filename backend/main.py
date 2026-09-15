@@ -2,9 +2,18 @@
 FastAPI backend for the AI Waste Identification & Reuse Recommendation app.
 
 Endpoints:
-  GET  /health          -> simple check that the server + model are up
-  POST /predict          -> accepts an image file, returns class + confidence
-                             + disposal guidance + reuse ideas in one response
+  GET  /health              -> simple check that the server + model are up
+  POST /predict              -> accepts an image file, returns class + confidence
+                                 + disposal guidance (category is fixed; reuse ideas
+                                 are generated separately, see /enhance-reuse)
+  GET  /waste-info/{class}   -> disposal guidance for an already-known class, no
+                                 image needed (used by the app's "Try scanning
+                                 these" example objects)
+  POST /enhance-reuse        -> AI-generated reuse ideas + YouTube links - the ONLY
+                                 source of reuse ideas in the app (no static list).
+                                 Called once per scan for the initial "Reuse ideas"
+                                 batch, and again (with `exclude`) each time the
+                                 user taps "More ideas".
 
 Run locally:
     pip install -r requirements.txt
@@ -109,26 +118,51 @@ async def predict(file: UploadFile = File(...)):
         "confidence": round(confidence, 4),
         "category": info["category"],
         "disposal": info["disposal"],
-        "reuse_ideas": info["reuse_ideas"],
+    }
+
+
+@app.get("/waste-info/{predicted_class}")
+def waste_info(predicted_class: str):
+    """Category + disposal info for an already-known material class, without
+    running the model on an image. Used by the app's "Try scanning these"
+    example objects: since the class is already known (that's the point of
+    an example), this calls the exact same get_waste_info() lookup /predict
+    uses, so clicking "Glass bottle" returns identical disposal guidance to
+    what a real scan of a glass bottle would produce - just without a
+    confidence score, since nothing was actually classified. The app fetches
+    reuse ideas for this separately via /enhance-reuse, same as any real scan."""
+    info = get_waste_info(predicted_class)
+    return {
+        "predicted_class": predicted_class,
+        "category": info["category"],
+        "disposal": info["disposal"],
     }
 
 
 class EnhanceReuseRequest(BaseModel):
     predicted_class: str
     category: str
+    exclude: list[str] = []  # ideas already shown - ask the model to avoid repeating these
 
 
 @app.post("/enhance-reuse")
 def enhance_reuse(payload: EnhanceReuseRequest):
-    """Optional AI-enhancement layer: a few LLM-generated reuse ideas, each
-    paired with a real YouTube tutorial link where one is found.
+    """The app's only source of reuse ideas: 3 LLM-generated ideas per call,
+    each paired with a real YouTube tutorial link where one is found. Called
+    once for the initial "Reuse ideas" batch, and again (with `exclude` set
+    to everything already shown) each time the user taps "More ideas" -
+    there's no separate static list this falls back to.
 
-    This is additive on top of the static reuse_ideas from /predict, and is
-    allowed to fail quietly - if the AI/YouTube services are down or the API
+    Allowed to fail quietly - if the AI/YouTube services are down or the API
     keys aren't configured, this returns an empty list with a 200 rather than
-    a 500, so it never breaks the core scan -> identify flow."""
+    a 500; the app shows a clean empty/error state instead of a crash."""
     try:
-        ideas = get_ai_reuse_ideas(payload.predicted_class, payload.category)
+        ideas = get_ai_reuse_ideas(payload.predicted_class, payload.category, exclude=payload.exclude)
+
+        # Exact-match safety net on top of the prompt's own exclude instruction -
+        # an LLM can still occasionally echo one back despite being asked not to.
+        already_shown = {idea.strip().lower() for idea in payload.exclude}
+        ideas = [idea for idea in ideas if idea.strip().lower() not in already_shown]
 
         ai_ideas = []
         for idea in ideas:

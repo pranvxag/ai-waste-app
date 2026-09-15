@@ -7,9 +7,9 @@ Read this, then `README.md`, then whichever of `backend/README.md` or
 ## What this project is
 
 An EVS-I app: photograph a waste item → AI identifies the material → app shows
-disposal instructions + reuse/upcycling ideas (a curated list always, plus optional
-AI-generated ones with real YouTube links). Full background and the original scope
-decision is in `docs/Project_Plan.docx` — worth reading once for context on *why*
+disposal instructions (fixed per material) + reuse/upcycling ideas (AI-generated per
+scan, each optionally paired with a real YouTube tutorial link). Full background and
+the original scope decision is in `docs/Project_Plan.docx` — worth reading once for context on *why*
 things are built this way, not just *how*.
 
 ## Project layout
@@ -17,8 +17,9 @@ things are built this way, not just *how*.
 ```
 ai-waste-app/
   backend/            Python, FastAPI. Runs the trained model, serves all API endpoints.
-    main.py           API routes (/health, /predict, /enhance-reuse)
-    waste_data.py     Static disposal + reuse-idea data per material class
+    main.py           API routes (/health, /predict, /waste-info, /enhance-reuse)
+    waste_data.py     Static category + disposal data per material class (no reuse
+                       ideas - those are always AI-generated, see llm_service.py)
     llm_service.py    Groq (AI reuse ideas) + YouTube Data API integration
     model/            Trained model files go here (not in git — see backend/README.md)
     .env              API keys (not in git)
@@ -55,18 +56,22 @@ reaching for a hex code or a raw pixel number, stop — either it already exists
 defined once in `src/utils/formatting.js`. Never introduce a different color for the
 same bucket in a new screen — pull from `getBucketMeta()` instead.
 
-**The static reuse-idea list is the reliability floor.** `/enhance-reuse` (AI-generated
-ideas) is additive and allowed to fail silently (empty result, no error to the user).
-Never make any core flow — scanning, seeing disposal info, seeing the built-in reuse
-ideas — depend on the AI endpoint succeeding.
+**Reuse ideas are AI-only, by design — there is no static fallback list.** `/enhance-reuse`
+is called automatically once per scan (for the initial "Reuse ideas" batch) and again
+on each "More ideas" tap. It's allowed to fail silently (empty result, no error to the
+user) — but that empty state is the correct behavior, not a bug to "fix" by adding a
+hardcoded list back in. Never make disposal info or the classification itself depend
+on the AI endpoint, though: those two must keep working even if Groq/YouTube are down
+or unconfigured.
 
 **Scan history is the single source of truth for app state.** Total counts, the Impact
 screen, and the Home screen's "recently scanned" strip all derive from
 `ScanHistoryContext`'s `scans` array — don't create a second, separate counter or
 duplicate storage for something derivable from `scans`.
 
-**Backend changes:** add new disposal/reuse data to `waste_data.py`'s `WASTE_INFO`
-dict, keyed exactly matching `class_names.json` (check casing/hyphenation). Never edit
+**Backend changes:** add new category/disposal data to `waste_data.py`'s `WASTE_INFO`
+dict, keyed exactly matching `class_names.json` (check casing/hyphenation) — reuse
+ideas don't belong here, they're always generated live via `llm_service.py`. Never edit
 the classification logic in `main.py` without also checking `class_names.json` order
 still matches the trained model — they must stay in sync.
 

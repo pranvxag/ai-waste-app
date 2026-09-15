@@ -42,7 +42,6 @@ ReLeaf/
       SecondaryButton.js
       StepItem.js
       MaterialIdCard.js
-      ReuseIdeaCard.js
     screens/
       HomeScreen.js
       ScanScreen.js

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Linking } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Linking, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, type, spacing, radii } from "../theme/theme";
@@ -7,48 +7,93 @@ import PrimaryButton from "../components/PrimaryButton";
 import SecondaryButton from "../components/SecondaryButton";
 import CloseButton from "../components/CloseButton";
 import MaterialIdCard from "../components/MaterialIdCard";
-import ReuseIdeaCard from "../components/ReuseIdeaCard";
 import { getBucketMeta, formatClassName } from "../utils/formatting";
 import { useScanHistory } from "../context/ScanHistoryContext";
 import { getEnhancedIdeas } from "../api/predict";
 
 export default function ResultScreen({ route, navigation }) {
-  const { imageUri, result, fromHistory } = route.params;
+  const { imageUri, result, fromHistory, isExample, exampleIcon } = route.params;
   const bucketMeta = getBucketMeta(result.predicted_class);
   const className = formatClassName(result.predicted_class);
   const { addScan } = useScanHistory();
 
-  // AI-enhanced ideas: null = not requested yet, [] = requested but nothing
-  // came back (empty result or the call failed - both render the same way).
-  const [aiIdeas, setAiIdeas] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
+  // "Reuse ideas" - the app's only source of reuse ideas is the AI, so this
+  // is fetched once, automatically, for every result. null = still loading;
+  // [] = loaded but empty (AI/YouTube down, or a genuinely empty response -
+  // both get the same clean empty state, never a hard error).
+  // For a past scan reopened from history, restore what was actually shown
+  // at scan time instead of burning another AI call and possibly showing
+  // different content than the user originally saw.
+  const [reuseIdeas, setReuseIdeas] = useState(fromHistory ? result.aiIdeas || [] : null);
 
-  // ScanScreen navigates here with `replace`, so a fresh Result screen is
-  // mounted for every new result - record it once, on mount. Skip this when
-  // we're just re-opening a past scan from history (e.g. HomeScreen's
-  // "Recently scanned" list), or every re-view would duplicate the entry.
+  // "More ideas" - additional AI-generated ideas, appended each time the
+  // button below is pressed. Always starts empty, even for a reopened past
+  // scan - only the initial "Reuse ideas" batch is persisted to history.
+  const [moreIdeas, setMoreIdeas] = useState([]);
+  const [moreLoading, setMoreLoading] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
+
+  // Fetch the initial "Reuse ideas" batch on mount (skipped when restored
+  // from history above). ScanScreen navigates here with `replace`, so a
+  // fresh Result screen is mounted for every new scan - this and the
+  // addScan() call below each run exactly once per real scan.
   useEffect(() => {
     if (fromHistory) return;
-    addScan({
-      imageUri,
-      predictedClass: result.predicted_class,
-      confidence: result.confidence,
-      bucketMeta,
-      disposal: result.disposal,
-      reuseIdeas: result.reuse_ideas,
-    });
+    let cancelled = false;
+
+    async function loadInitialIdeas() {
+      let ideas = [];
+      try {
+        ideas = await getEnhancedIdeas(result.predicted_class, result.category);
+      } catch {
+        ideas = []; // clean empty state below, never a crash
+      }
+      if (cancelled) return;
+      setReuseIdeas(ideas);
+
+      // Record the scan once its reuse ideas are known, so history shows
+      // what was actually generated - not for example objects, which were
+      // never really scanned and shouldn't show up in "Recently scanned".
+      if (!isExample) {
+        addScan({
+          imageUri,
+          predictedClass: result.predicted_class,
+          confidence: result.confidence,
+          bucketMeta,
+          category: result.category,
+          disposal: result.disposal,
+          aiIdeas: ideas,
+        });
+      }
+    }
+
+    loadInitialIdeas();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleGetMoreIdeas() {
-    setAiLoading(true);
+  async function handleMoreIdeas() {
+    setMoreLoading(true);
+    setMoreFailed(false);
     try {
-      const ideas = await getEnhancedIdeas(result.predicted_class, result.category);
-      setAiIdeas(ideas);
+      const alreadyShown = [...(reuseIdeas || []), ...moreIdeas].map((item) => item.idea);
+      const fresh = await getEnhancedIdeas(result.predicted_class, result.category, alreadyShown);
+
+      // Safety-net dedup on top of the backend's own exclude handling.
+      const shownLower = new Set(alreadyShown.map((idea) => idea.trim().toLowerCase()));
+      const deduped = fresh.filter((item) => !shownLower.has(item.idea.trim().toLowerCase()));
+
+      if (deduped.length === 0) {
+        setMoreFailed(true);
+      } else {
+        setMoreIdeas((prev) => [...prev, ...deduped]);
+      }
     } catch {
-      setAiIdeas([]); // treated the same as "no extra ideas" - never show a hard error here
+      setMoreFailed(true);
     } finally {
-      setAiLoading(false);
+      setMoreLoading(false);
     }
   }
 
@@ -61,6 +106,8 @@ export default function ResultScreen({ route, navigation }) {
           className={className}
           confidence={result.confidence}
           bucketMeta={bucketMeta}
+          isExample={isExample}
+          exampleIcon={exampleIcon}
         />
 
         <View style={styles.section}>
@@ -71,47 +118,57 @@ export default function ResultScreen({ route, navigation }) {
           <Text style={type.body}>{result.disposal}</Text>
         </View>
 
-        {result.reuse_ideas?.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons name="recycle" size={18} color={colors.ink} />
-              <Text style={type.h3}>Reuse ideas</Text>
-            </View>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <MaterialCommunityIcons name="recycle" size={18} color={colors.ink} />
+            <Text style={type.h3}>Reuse ideas</Text>
+          </View>
+          {reuseIdeas === null ? (
+            <ActivityIndicator color={colors.ink} />
+          ) : reuseIdeas.length === 0 ? (
+            <Text style={[type.caption, styles.noIdeasText]}>
+              Couldn't generate reuse ideas right now.
+            </Text>
+          ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {result.reuse_ideas.map((idea, i) => (
-                <ReuseIdeaCard key={i} idea={idea} index={i} accentColor={bucketMeta.color} />
+              {reuseIdeas.map((item, i) => (
+                <AiIdeaCard key={i} item={item} />
               ))}
             </ScrollView>
-          </View>
-        )}
+          )}
+        </View>
 
-        <View style={styles.section}>
-          {aiIdeas === null ? (
-            aiLoading ? (
-              <ActivityIndicator color={colors.ink} />
-            ) : (
-              <SecondaryButton
-                label="Get more ideas"
-                onPress={handleGetMoreIdeas}
-                icon={<MaterialCommunityIcons name="creation" size={18} color={colors.ink} />}
-              />
-            )
-          ) : aiIdeas.length === 0 ? (
-            <Text style={[type.caption, styles.noIdeasText]}>No extra ideas right now</Text>
-          ) : (
-            <>
-              <View style={styles.sectionHeader}>
-                <MaterialCommunityIcons name="creation" size={18} color={colors.ink} />
-                <Text style={type.h3}>More ideas</Text>
-              </View>
+        {reuseIdeas !== null && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <MaterialCommunityIcons name="creation" size={18} color={colors.ink} />
+              <Text style={type.h3}>More ideas</Text>
+            </View>
+
+            {moreIdeas.length > 0 && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {aiIdeas.map((item, i) => (
+                {moreIdeas.map((item, i) => (
                   <AiIdeaCard key={i} item={item} />
                 ))}
               </ScrollView>
-            </>
-          )}
-        </View>
+            )}
+
+            {moreLoading ? (
+              <ActivityIndicator color={colors.ink} />
+            ) : (
+              <SecondaryButton
+                label={moreIdeas.length > 0 ? "Get even more ideas" : "More ideas"}
+                onPress={handleMoreIdeas}
+                icon={<MaterialCommunityIcons name="creation" size={18} color={colors.ink} />}
+              />
+            )}
+            {moreFailed && (
+              <Text style={[type.caption, styles.noIdeasText]}>
+                Couldn't get more ideas right now - try again.
+              </Text>
+            )}
+          </View>
+        )}
 
         <PrimaryButton
           label="Scan another item"
@@ -124,6 +181,10 @@ export default function ResultScreen({ route, navigation }) {
 }
 
 function AiIdeaCard({ item }) {
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const video = item.video;
+  const showThumbnail = video?.thumbnail_url && !thumbnailFailed;
+
   return (
     <View style={styles.aiCard}>
       <View style={styles.aiBadge}>
@@ -131,12 +192,32 @@ function AiIdeaCard({ item }) {
         <Text style={styles.aiBadgeText}>AI suggested</Text>
       </View>
       <Text style={[type.body, { marginTop: spacing.xs }]}>{item.idea}</Text>
-      {item.video && (
-        <Pressable onPress={() => Linking.openURL(item.video.url)} style={styles.videoLink}>
-          <MaterialCommunityIcons name="youtube" size={16} color={colors.recyclable} />
-          <Text style={[type.label, styles.videoLinkText]} numberOfLines={1}>
-            {item.video.title}
-          </Text>
+
+      {video && (
+        <Pressable onPress={() => Linking.openURL(video.url)} style={styles.videoCard}>
+          {showThumbnail && (
+            <View style={styles.videoThumbnailWrap}>
+              <Image
+                source={{ uri: video.thumbnail_url }}
+                style={styles.videoThumbnail}
+                onError={() => setThumbnailFailed(true)}
+              />
+              <View style={styles.playOverlay}>
+                <View style={styles.playButtonCircle}>
+                  <MaterialCommunityIcons name="play" size={18} color={colors.white} />
+                </View>
+              </View>
+            </View>
+          )}
+          <View style={styles.videoInfo}>
+            <MaterialCommunityIcons name="youtube" size={16} color={colors.recyclable} />
+            <View style={styles.videoTextCol}>
+              <Text style={[type.label, styles.videoTitle]} numberOfLines={2}>
+                {video.title}
+              </Text>
+              <Text style={type.caption}>YouTube</Text>
+            </View>
+          </View>
         </Pressable>
       )}
     </View>
@@ -165,7 +246,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   aiCard: {
-    width: 220,
+    width: 240,
     backgroundColor: colors.surface,
     borderRadius: radii.md,
     borderWidth: 1,
@@ -188,14 +269,48 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontFamily: "Inter_500Medium",
   },
-  videoLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
+  videoCard: {
     marginTop: spacing.sm,
   },
-  videoLinkText: {
+  videoThumbnailWrap: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: radii.sm,
+    overflow: "hidden",
+    backgroundColor: colors.border,
+  },
+  videoThumbnail: {
+    width: "100%",
+    height: "100%",
+  },
+  playOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.2)",
+  },
+  playButtonCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  videoInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: spacing.xs,
+  },
+  videoTextCol: {
     flex: 1,
-    color: colors.recyclable,
+  },
+  videoTitle: {
+    color: colors.ink,
   },
 });

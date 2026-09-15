@@ -3,7 +3,19 @@ import { View, Text, Image, StyleSheet, Animated } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, type, spacing, radii } from "../theme/theme";
 
-export default function MaterialIdCard({ imageUri, className, confidence, bucketMeta }) {
+// isExample + exampleIcon: used when this is showing an example object's
+// result (from HomeScreen's "Try scanning these") rather than a real scan -
+// there's no real photo and no real confidence score in that case, so we
+// show an icon in place of the photo and skip the confidence line entirely
+// rather than ever inventing a fake-looking number.
+export default function MaterialIdCard({
+  imageUri,
+  className,
+  confidence,
+  bucketMeta,
+  isExample,
+  exampleIcon,
+}) {
   const slideAnim = useRef(new Animated.Value(24)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -25,14 +37,24 @@ export default function MaterialIdCard({ imageUri, className, confidence, bucket
     >
       <View style={[styles.band, { backgroundColor: bucketMeta.color }]} />
       <View style={styles.content}>
-        <Image source={{ uri: imageUri }} style={styles.thumbnail} />
+        {isExample ? (
+          <View style={[styles.thumbnail, styles.exampleThumbnail, { backgroundColor: bucketMeta.color }]}>
+            <MaterialCommunityIcons name={exampleIcon} size={32} color={colors.white} />
+          </View>
+        ) : (
+          <Image source={{ uri: imageUri }} style={styles.thumbnail} />
+        )}
         <View style={styles.info}>
           <View style={[styles.pill, { backgroundColor: bucketMeta.color }]}>
             <MaterialCommunityIcons name={bucketMeta.icon} size={14} color={colors.white} />
             <Text style={styles.pillText}>{bucketMeta.label}</Text>
           </View>
           <Text style={styles.className}>{className}</Text>
-          <Text style={type.caption}>{confidencePct}% confident</Text>
+          {isExample ? (
+            <Text style={type.caption}>Example item</Text>
+          ) : (
+            <Text style={type.caption}>{confidencePct}% confident</Text>
+          )}
         </View>
       </View>
     </Animated.View>
@@ -66,6 +88,10 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: radii.sm,
     backgroundColor: colors.border,
+  },
+  exampleThumbnail: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   info: {
     flex: 1,

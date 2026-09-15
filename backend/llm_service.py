@@ -1,11 +1,12 @@
 """
-Optional AI-enhancement layer: creative reuse ideas from an LLM (Groq) plus a
-matching real YouTube tutorial link for each idea.
-
-Both functions are defensive by design - if an API key is missing, the
-network is down, or a response is malformed, they return an empty/None
-result instead of raising, so this layer can never take down the core
-predict flow in main.py.
+AI-generated reuse/upcycling ideas from an LLM (Groq), each optionally
+paired with a matching real YouTube tutorial link. This is the ONLY source
+of reuse ideas in the app - there is no static fallback list - so both
+functions are defensive by design: if an API key is missing, the network is
+down, or a response is malformed, they return an empty/None result instead
+of raising, so a flaky AI/YouTube call can never crash the request. The
+caller (main.py) is responsible for showing a clean empty state when that
+happens, rather than fabricating content.
 
 Requires GROQ_API_KEY and YOUTUBE_API_KEY in the environment (see .env.example).
 """
@@ -35,18 +36,34 @@ YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 REQUEST_TIMEOUT = 10  # seconds
 
 
-def get_ai_reuse_ideas(predicted_class: str, category: str) -> list[str]:
+def get_ai_reuse_ideas(predicted_class: str, category: str, exclude: list[str] | None = None) -> list[str]:
     """Ask Groq for 3 creative, specific, practical reuse/upcycling ideas for
     a used item of the given material class. Returns [] on any failure
-    (missing key, network error, bad/unparseable response) - never raises."""
+    (missing key, network error, bad/unparseable response) - never raises.
+
+    `exclude` is the list of ideas already shown to the user for this item
+    (from the initial batch and/or earlier "more ideas" requests) - passed
+    back to the model so repeat requests generate genuinely new suggestions
+    instead of reshuffling the same ones. Best-effort only (an LLM can still
+    produce something close to an excluded idea); main.py does an exact-match
+    dedup on top of this as a safety net."""
     if not GROQ_API_KEY:
         return []
+
+    exclude_clause = ""
+    if exclude:
+        already_shown = "\n".join(f"- {idea}" for idea in exclude[:15])
+        exclude_clause = (
+            "\n\nThe user has already seen these ideas - do NOT repeat them or suggest "
+            f"anything very similar:\n{already_shown}\n"
+        )
 
     prompt = (
         f"A user has a used item made of '{predicted_class}' "
         f"(waste category: '{category}'). Suggest exactly 3 creative, specific, "
         "practical reuse or upcycling ideas for this item before it becomes waste. "
-        "Each idea should be a single concrete sentence a person could actually do at home.\n\n"
+        "Each idea should be a single concrete sentence a person could actually do at home."
+        f"{exclude_clause}\n\n"
         "Respond with ONLY a JSON array of 3 strings, and nothing else - no markdown, "
         "no explanation, no code fences. Example format: "
         '["idea one", "idea two", "idea three"]'
@@ -95,8 +112,13 @@ def _parse_json_array(content: str):
 
 def get_youtube_link(query: str) -> dict | None:
     """Search YouTube for `query` and return the top video result as
-    {"title", "url", "thumbnail"}, or None if there are no results or the
-    request fails for any reason - never raises."""
+    {"video_id", "title", "url", "thumbnail_url"}, or None if there are no
+    results or the request fails for any reason - never raises.
+
+    The thumbnail is built from YouTube's standard i.ytimg.com/img.youtube.com
+    URL pattern using the real video_id from the search result, rather than
+    the (lower-res) thumbnail URL embedded in the search response - always a
+    genuine thumbnail for a real, valid video, never a fabricated one."""
     if not YOUTUBE_API_KEY:
         return None
 
@@ -122,9 +144,10 @@ def get_youtube_link(query: str) -> dict | None:
         snippet = top["snippet"]
 
         return {
+            "video_id": video_id,
             "title": snippet["title"],
             "url": f"https://www.youtube.com/watch?v={video_id}",
-            "thumbnail": snippet["thumbnails"]["default"]["url"],
+            "thumbnail_url": f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
         }
     except Exception:
         return None

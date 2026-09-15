@@ -15,8 +15,9 @@ export default function HistoryScreen({ navigation }) {
       result: {
         predicted_class: scan.predictedClass,
         confidence: scan.confidence,
+        category: scan.category,
         disposal: scan.disposal,
-        reuse_ideas: scan.reuseIdeas,
+        aiIdeas: scan.aiIdeas,
       },
       fromHistory: true,
     });

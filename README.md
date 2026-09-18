@@ -2,24 +2,25 @@
 
 EVS-I project — Semester 3, B.Tech CSE (Batch C2, Division C).
 
-An app that photographs a waste item, identifies what it's made of using an AI
-image-classification model, tells you how to dispose of it correctly, and
-recommends reuse/upcycling ideas generated live by an LLM — each optionally
-paired with a real YouTube tutorial link — with more available on demand.
+An app that photographs a waste item, identifies what it's made of using YOLO
+object detection (falling back to Gemini Vision when YOLO isn't confident),
+tells you how to dispose of it correctly, and recommends reuse/upcycling ideas
+generated live by an LLM — each optionally paired with a real YouTube tutorial
+link — with more available on demand.
 
 ## Structure
 
 ```
 ai-waste-app/
-  backend/       FastAPI server — model inference, disposal data, AI-enhanced ideas
+  backend/       FastAPI server — recognition pipeline, disposal data, AI-enhanced ideas
   ReLeaf/        Expo (React Native) mobile app
   docs/          Project plan, training notebook
 ```
 
-- **`backend/`** — see `backend/README.md`. Serves `/predict` (classification + fixed
-  disposal guidance) and `/enhance-reuse` (AI-generated reuse ideas + YouTube links via
-  Groq + YouTube Data API — the app's only source of reuse ideas, called automatically
-  per scan and again on each "More ideas" tap).
+- **`backend/`** — see `backend/README.md`. Serves `/predict` (YOLO → confidence check →
+  Gemini Vision fallback, plus disposal guidance) and `/enhance-reuse` (AI-generated reuse
+  ideas + YouTube links via Groq + YouTube Data API — the app's only source of reuse ideas,
+  called automatically per scan and again on each "More ideas" tap).
 - **`ReLeaf/`** — see `ReLeaf/README.md`. Bottom-tab app: Home, History, Impact, Settings,
   plus a center camera button that opens the Scan → Result flow.
 - **`docs/`** — `Project_Plan.docx` (original scope/architecture doc),
@@ -28,16 +29,29 @@ ai-waste-app/
 ## App architecture at a glance
 
 ```
-[ReLeaf app] --photo--> [FastAPI /predict] --runs--> [MobileNetV2 model]
-                              |
-                              v
-                   fixed disposal guidance
-                  (category + instructions)
+[ReLeaf app] --photo--> [FastAPI /predict] --> [YOLO] --> confidence check
+                                                            /          \
+                                                        HIGH           LOW
+                                                          |              |
+                                                   YOLO result    [Gemini Vision]
+                                                          \              /
+                                                           v            v
+                                                      final classification
+                                                               |
+                                                               v
+                                                   disposal guidance + bucket
 
 [ReLeaf Result screen] --auto, then "More ideas"--> [FastAPI /enhance-reuse]
                                                              |
                                           Groq (reuse ideas) + YouTube Data API (real video links)
 ```
+
+YOLO runs on every scan; its answer is used directly only when it's confident **and** maps
+to a waste class the app knows. Anything else sends the original image to Gemini Vision,
+which identifies the item and supplies its own disposal guidance. Both paths return the
+same result shape, so the Result screen never needs to know which one answered — the
+`source` field says so anyway. If neither can identify the item, the app says exactly that
+rather than guessing.
 
 `/enhance-reuse` is called automatically once per scan to populate "Reuse ideas," and
 again (excluding what's already shown) every time "More ideas" is tapped — there's no
@@ -48,19 +62,25 @@ Scan history, impact stats, and the backend URL setting are all stored on-device
 
 ## Getting the model file
 
-`backend/model/` is empty in git (trained models are large binaries, excluded via
-`.gitignore`). Run `docs/waste_classifier_training.ipynb` on Google Colab, then place
-`waste_classifier.keras` and `class_names.json` into `backend/model/`.
+Nothing to do — the YOLO weights download automatically to `backend/model/` on the first
+scan. `backend/model/` stays empty in git (model files are large binaries, excluded via
+`.gitignore`).
 
-## Getting API keys (for reuse ideas)
+`docs/waste_classifier_training.ipynb` trains a custom waste classifier and is kept for
+reference; the app no longer loads its output. See `backend/README.md` for how to plug a
+custom waste-trained YOLO model into the pipeline.
 
-The rest of the app (classification, disposal guidance, scan history) works without
-these — but reuse ideas are entirely AI-generated, so without a `GROQ_API_KEY` the
-"Reuse ideas" / "More ideas" sections will just show a clean empty state instead of
-suggestions. Get two free keys and put them in `backend/.env` (see `backend/.env.example`):
-- **Groq**: console.groq.com — free tier, no card required. Required for any reuse ideas.
-- **YouTube Data API v3**: Google Cloud Console — enable the API, create a key. Optional
-  on top of that — without it, ideas still show up, just without a video link.
+## Getting API keys
+
+Put these in `backend/.env` (see `backend/.env.example`) — all three are free and all stay
+server-side; the mobile app never holds a key.
+- **Gemini**: aistudio.google.com/apikey — the recognition fallback. Without it, any scan
+  YOLO isn't confident about returns "couldn't identify" instead. With the default COCO
+  model that's most scans, so this is the one worth setting up first.
+- **Groq**: console.groq.com — free tier, no card required. Required for any reuse ideas;
+  without it those sections show a clean empty state.
+- **YouTube Data API v3**: Google Cloud Console — enable the API, create a key. Optional —
+  without it, reuse ideas still show up, just without a video link.
 
 ## Run order
 

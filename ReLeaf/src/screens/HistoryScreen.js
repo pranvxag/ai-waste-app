@@ -17,6 +17,7 @@ export default function HistoryScreen({ navigation }) {
         confidence: scan.confidence,
         category: scan.category,
         disposal: scan.disposal,
+        bucket: scan.bucket,
         aiIdeas: scan.aiIdeas,
       },
       fromHistory: true,
@@ -51,7 +52,7 @@ export default function HistoryScreen({ navigation }) {
 }
 
 function HistoryRow({ scan, onPress }) {
-  const bucketMeta = getBucketMeta(scan.predictedClass);
+  const bucketMeta = getBucketMeta(scan.predictedClass, scan.bucket);
 
   return (
     <Pressable

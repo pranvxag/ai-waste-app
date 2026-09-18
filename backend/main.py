@@ -1,11 +1,17 @@
 """
 FastAPI backend for the AI Waste Identification & Reuse Recommendation app.
 
+Recognition pipeline (see yolo_service.py and gemini_service.py):
+
+    image -> YOLO -> confidence check -> HIGH: YOLO result
+                                      -> LOW:  Gemini Vision (original image)
+                                            -> normalized result -> waste info
+
 Endpoints:
-  GET  /health              -> simple check that the server + model are up
-  POST /predict              -> accepts an image file, returns class + confidence
-                                 + disposal guidance (category is fixed; reuse ideas
-                                 are generated separately, see /enhance-reuse)
+  GET  /health              -> server status + whether YOLO/Gemini are usable
+  POST /predict              -> accepts an image file, runs the pipeline above,
+                                 returns the normalized classification + disposal
+                                 guidance (reuse ideas come from /enhance-reuse)
   GET  /waste-info/{class}   -> disposal guidance for an already-known class, no
                                  image needed (used by the app's "Try scanning
                                  these" example objects)
@@ -25,23 +31,44 @@ and point the Expo app at the https URL ngrok gives you.
 """
 
 import io
-import json
-import os
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 
-import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from pydantic import BaseModel
 
+import gemini_service
+import yolo_service
+from config import GEMINI_API_KEY, GEMINI_MAX_IMAGE_EDGE, YOLO_CONFIDENCE_THRESHOLD
 from llm_service import get_ai_reuse_ideas, get_youtube_link
-from waste_data import get_waste_info
+from waste_data import get_bucket, get_waste_info
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "model", "waste_classifier.keras")
-CLASS_NAMES_PATH = os.path.join(os.path.dirname(__file__), "model", "class_names.json")
-IMG_SIZE = (224, 224)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Waste Identification & Reuse API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Warm both recognition engines up in the background as the server starts.
+
+    Between them, loading the YOLO weights, running its first inference, and
+    importing the Gemini SDK take far longer than any later scan - measured at
+    tens of seconds, all of which the first person to scan something would
+    otherwise sit through. Doing it here lands that cost while the server is
+    booting instead.
+
+    Runs on daemon threads so the server starts serving immediately; a scan
+    arriving mid-warm-up simply waits on the same load rather than racing it."""
+    for warm in (yolo_service.warm_up, gemini_service.warm_up):
+        threading.Thread(target=warm, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Waste Identification & Reuse API", lifespan=lifespan)
 
 # Allow the Expo app (and browser testing) to call this API from any origin.
 # Fine for a student project demo; tighten this if you ever deploy publicly long-term.
@@ -52,45 +79,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_model = None
-_class_names = None
-
-
-def _load_model_if_needed():
-    """Lazy-load the model on first request so the server can still start
-    (and /health can report the missing-model state clearly) even before
-    the trained model files have been copied into backend/model/."""
-    global _model, _class_names
-
-    if _model is not None:
-        return
-
-    if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_NAMES_PATH):
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Model not found. Copy waste_classifier.keras and class_names.json "
-                "(from the training notebook) into backend/model/ and restart the server."
-            ),
-        )
-
-    import tensorflow as tf  # imported here so the server can boot even without TF installed yet
-
-    _model = tf.keras.models.load_model(MODEL_PATH)
-    with open(CLASS_NAMES_PATH) as f:
-        _class_names = json.load(f)
-
 
 @app.get("/health")
 def health():
-    model_ready = os.path.exists(MODEL_PATH) and os.path.exists(CLASS_NAMES_PATH)
-    return {"status": "ok", "model_ready": model_ready}
+    """`model_ready` reports the primary detector (YOLO). Gemini is reported
+    separately because the app still works without it - it just loses the
+    fallback for items YOLO can't identify."""
+    return {
+        "status": "ok",
+        "model_ready": yolo_service.is_available(),
+        "gemini_configured": bool(GEMINI_API_KEY),
+    }
 
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    _load_model_if_needed()
+    """Identify the item in an uploaded photo.
 
+    YOLO runs first. Its result is used directly when it is both confident
+    (>= YOLO_CONFIDENCE_THRESHOLD) and mapped to a waste class we actually know.
+    Anything else - a weak detection, a label whose material is ambiguous, no
+    detection at all, or YOLO being unavailable - escalates the ORIGINAL image
+    to Gemini Vision.
+
+    Both paths return the same shape, so the app's Result screen doesn't need to
+    know or care which one answered:
+
+        {predicted_class, confidence, category, disposal,
+         bucket, source, material, reusable}
+    """
     if file.content_type not in ("image/jpeg", "image/png", "image/jpg"):
         raise HTTPException(status_code=400, detail="Please upload a JPEG or PNG image.")
 
@@ -100,42 +117,153 @@ async def predict(file: UploadFile = File(...)):
     except Exception:
         raise HTTPException(status_code=400, detail="Could not read the uploaded image.")
 
-    image = image.resize(IMG_SIZE)
-    arr = np.array(image, dtype=np.float32)
-    arr = np.expand_dims(arr, axis=0)  # batch dimension
-    # NOTE: preprocessing (mobilenet_v2.preprocess_input) is baked into the model's
-    # own input pipeline from training, so raw resized pixels go in here.
+    detection = yolo_service.detect(image)
 
-    predictions = _model.predict(arr, verbose=0)[0]
-    top_idx = int(np.argmax(predictions))
-    predicted_class = _class_names[top_idx]
-    confidence = float(predictions[top_idx])
+    # --- Confidence check: the one decision point in the whole pipeline ---
+    if detection is None:
+        yolo_label, mapped_class, confidence = None, None, 0.0
+        reason = "no_detection"
+    else:
+        yolo_label = detection["yolo_label"]
+        mapped_class = detection["predicted_class"]
+        confidence = detection["confidence"]
+        reason = "unmapped_label" if mapped_class is None else "low_confidence"
 
+    high_confidence = mapped_class is not None and confidence >= YOLO_CONFIDENCE_THRESHOLD
+
+    if high_confidence:
+        logger.info(
+            "scan: yolo_label=%s mapped=%s conf=%.2f decision=HIGH_CONFIDENCE source=yolo",
+            yolo_label, mapped_class, confidence,
+        )
+        return _result_from_yolo(mapped_class, confidence)
+
+    logger.info(
+        "scan: yolo_label=%s mapped=%s conf=%.2f decision=LOW_CONFIDENCE reason=%s source=gemini",
+        yolo_label, mapped_class, confidence, reason,
+    )
+
+    gemini_bytes, mime_type = _prepare_for_gemini(image, contents, file.content_type)
+    try:
+        gemini_result = gemini_service.identify_waste_from_image(gemini_bytes, mime_type)
+    except gemini_service.RateLimited:
+        # Don't blame the photo for a quota problem - retaking it won't help.
+        logger.info("scan: result=RATE_LIMITED (Gemini quota exhausted)")
+        raise HTTPException(
+            status_code=429,
+            detail="Too many scans in a row - wait a few seconds and try again.",
+        )
+
+    if gemini_result is None:
+        # Neither engine could identify the item. Say so plainly - the app shows
+        # this message and the user can simply scan again. Never invent a class.
+        logger.info("scan: result=UNIDENTIFIED (YOLO uncertain, Gemini unavailable or unsure)")
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Couldn't confidently identify this item. Try again with better "
+                "lighting, or move closer so the object fills more of the frame."
+            ),
+        )
+
+    logger.info(
+        "scan: gemini_object=%s bucket=%s conf=%.2f source=gemini",
+        gemini_result["object"], gemini_result["bucket"], gemini_result["confidence"],
+    )
+    return _result_from_gemini(gemini_result)
+
+
+def _prepare_for_gemini(image: Image.Image, original: bytes, content_type: str) -> tuple[bytes, str]:
+    """Return the image bytes to send to Gemini, shrinking oversized photos.
+
+    Phone cameras produce multi-megabyte photos, and uploading those to Google
+    is a real part of the wait - especially over a tunnelled connection. Gemini
+    downsamples large images internally anyway, so sending a smaller one costs
+    nothing in identification quality while noticeably cutting the round trip.
+
+    This still sends the actual photograph, not YOLO's guess - Gemini analyses
+    the object itself, which is the point of the fallback. Small images are
+    passed through untouched rather than needlessly re-encoded.
+    """
+    # "image/jpg" is accepted from clients above but isn't a real MIME type,
+    # and Gemini rejects it.
+    mime_type = "image/jpeg" if content_type == "image/jpg" else content_type
+
+    if max(image.size) <= GEMINI_MAX_IMAGE_EDGE:
+        return original, mime_type
+
+    resized = image.copy()
+    resized.thumbnail((GEMINI_MAX_IMAGE_EDGE, GEMINI_MAX_IMAGE_EDGE), Image.LANCZOS)
+    buffer = io.BytesIO()
+    resized.save(buffer, format="JPEG", quality=85)
+    shrunk = buffer.getvalue()
+
+    # Re-encoding can actually produce a BIGGER file than the original - an
+    # image only slightly over the limit barely shrinks, while our quality-85
+    # JPEG may be less compressed than whatever the camera produced. Sending
+    # that would be strictly worse, so keep whichever is genuinely smaller.
+    if len(shrunk) >= len(original):
+        return original, mime_type
+
+    logger.info(
+        "resized image for Gemini: %s -> %s (%.0fKB -> %.0fKB)",
+        image.size, resized.size, len(original) / 1024, len(shrunk) / 1024,
+    )
+    return shrunk, "image/jpeg"
+
+
+def _result_from_yolo(predicted_class: str, confidence: float) -> dict:
+    """Normalized result for the high-confidence YOLO path. Disposal guidance
+    comes from the app's own reference data, since the class is one we know."""
     info = get_waste_info(predicted_class)
+    bucket = get_bucket(predicted_class)
 
     return {
         "predicted_class": predicted_class,
         "confidence": round(confidence, 4),
         "category": info["category"],
         "disposal": info["disposal"],
+        "bucket": bucket,
+        "source": "yolo",
+        # For the app's own waste classes the class name *is* the material.
+        "material": predicted_class,
+        "reusable": bucket == "reuse",
+    }
+
+
+def _result_from_gemini(gemini_result: dict) -> dict:
+    """Normalized result for the Gemini fallback path. Gemini supplies the
+    disposal guidance itself, because this path exists precisely for items that
+    aren't in waste_data.WASTE_INFO and so have nothing to look up."""
+    return {
+        "predicted_class": gemini_result["object"],
+        "confidence": round(gemini_result["confidence"], 4),
+        "category": gemini_result["category"],
+        "disposal": gemini_result["disposal"],
+        "bucket": gemini_result["bucket"],
+        "source": "gemini",
+        "material": gemini_result["material"],
+        "reusable": gemini_result["reusable"],
     }
 
 
 @app.get("/waste-info/{predicted_class}")
 def waste_info(predicted_class: str):
     """Category + disposal info for an already-known material class, without
-    running the model on an image. Used by the app's "Try scanning these"
+    running recognition on an image. Used by the app's "Try scanning these"
     example objects: since the class is already known (that's the point of
-    an example), this calls the exact same get_waste_info() lookup /predict
-    uses, so clicking "Glass bottle" returns identical disposal guidance to
-    what a real scan of a glass bottle would produce - just without a
-    confidence score, since nothing was actually classified. The app fetches
-    reuse ideas for this separately via /enhance-reuse, same as any real scan."""
+    an example), this calls the exact same get_waste_info() lookup the
+    high-confidence path uses, so clicking "Glass bottle" returns identical
+    disposal guidance to what a real scan of a glass bottle would produce -
+    just without a confidence score, since nothing was actually classified. The
+    app fetches reuse ideas for this separately via /enhance-reuse, same as any
+    real scan."""
     info = get_waste_info(predicted_class)
     return {
         "predicted_class": predicted_class,
         "category": info["category"],
         "disposal": info["disposal"],
+        "bucket": get_bucket(predicted_class),
     }
 
 
@@ -153,6 +281,13 @@ def enhance_reuse(payload: EnhanceReuseRequest):
     to everything already shown) each time the user taps "More ideas" -
     there's no separate static list this falls back to.
 
+    Works for any label, including free-text ones Gemini produced for items
+    outside the app's fixed class list - the class and category are only ever
+    used as prompt text.
+
+    Ideas that found a matching video are returned first, so the user sees the
+    ones they can actually watch a tutorial for before the text-only ones.
+
     Allowed to fail quietly - if the AI/YouTube services are down or the API
     keys aren't configured, this returns an empty list with a 200 rather than
     a 500; the app shows a clean empty/error state instead of a crash."""
@@ -163,11 +298,21 @@ def enhance_reuse(payload: EnhanceReuseRequest):
         # an LLM can still occasionally echo one back despite being asked not to.
         already_shown = {idea.strip().lower() for idea in payload.exclude}
         ideas = [idea for idea in ideas if idea.strip().lower() not in already_shown]
+        if not ideas:
+            return {"ai_ideas": []}
 
-        ai_ideas = []
-        for idea in ideas:
-            video = get_youtube_link(f"{idea} DIY tutorial")
-            ai_ideas.append({"idea": idea, "video": video})
+        # One YouTube search per idea, run together rather than one after
+        # another - they're independent network calls, so doing them in
+        # sequence made this endpoint roughly 3x slower than it needed to be.
+        with ThreadPoolExecutor(max_workers=len(ideas)) as pool:
+            videos = list(pool.map(lambda idea: get_youtube_link(f"{idea} DIY tutorial"), ideas))
+
+        ai_ideas = [{"idea": idea, "video": video} for idea, video in zip(ideas, videos)]
+
+        # Ideas with a video first, keeping the model's original order within
+        # each group (sorted() is stable, so this only moves the video-less
+        # ones to the back).
+        ai_ideas.sort(key=lambda item: item["video"] is None)
 
         return {"ai_ideas": ai_ideas}
     except Exception:

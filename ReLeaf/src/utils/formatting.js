@@ -1,7 +1,13 @@
 import { colors } from "../theme/theme";
 
-// Maps each of the 12 model classes to a disposal "bucket" - drives color + icon
-// consistently across the app. Keep in sync with backend/waste_data.py categories.
+// Maps each of the 12 built-in classes to a disposal "bucket" - drives color +
+// icon consistently across the app. Keep in sync with BUCKET_BY_CLASS in
+// backend/waste_data.py.
+//
+// This is now only a FALLBACK: the backend sends an explicit `bucket` with every
+// result (see getBucketMeta below). It's still needed for scans saved to history
+// before that field existed, and for anything identified by Gemini Vision, whose
+// labels are free text and will never appear as keys here.
 export const CATEGORY_BY_CLASS = {
   battery: "hazardous",
   biological: "compostable",
@@ -25,9 +31,14 @@ export const BUCKET_META = {
   general: { label: "General waste", color: colors.general, icon: "trash-can-outline" },
 };
 
-export function getBucketMeta(predictedClass) {
-  const bucket = CATEGORY_BY_CLASS[predictedClass] || "general";
-  return { bucket, ...BUCKET_META[bucket] };
+// `bucket` is the canonical key the backend sends with every scan result, and is
+// the only thing that works for items identified by Gemini Vision (whose labels
+// aren't in CATEGORY_BY_CLASS). Falls back to the class lookup when it's absent -
+// e.g. example objects, or scans stored before the backend sent this field.
+export function getBucketMeta(predictedClass, bucket) {
+  const resolved =
+    (bucket && BUCKET_META[bucket] && bucket) || CATEGORY_BY_CLASS[predictedClass] || "general";
+  return { bucket: resolved, ...BUCKET_META[resolved] };
 }
 
 // "brown-glass" -> "Brown glass", "cardboard" -> "Cardboard"

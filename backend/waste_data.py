@@ -87,3 +87,31 @@ def get_waste_info(predicted_class: str) -> dict:
                         "check your local municipal waste guidelines.",
         },
     )
+
+
+# The five disposal "buckets" the app's UI renders (one colour + icon each).
+# `category` above is human-readable prose and varies per class; this is the
+# machine-readable key the Result screen, history badges and Impact counters use.
+#
+# Keep in sync with CATEGORY_BY_CLASS in ReLeaf/src/utils/formatting.js - the app
+# falls back to its own copy for scans saved before the backend started sending
+# this field.
+BUCKET_BY_CLASS = {
+    "battery": "hazardous",
+    "biological": "compostable",
+    "brown-glass": "recyclable",
+    "green-glass": "recyclable",
+    "white-glass": "recyclable",
+    "cardboard": "recyclable",
+    "metal": "recyclable",
+    "paper": "recyclable",
+    "plastic": "recyclable",
+    "clothes": "reuse",
+    "shoes": "reuse",
+    "trash": "general",
+}
+
+
+def get_bucket(predicted_class: str) -> str:
+    """Canonical bucket key for a class, defaulting to general waste."""
+    return BUCKET_BY_CLASS.get(predicted_class, "general")

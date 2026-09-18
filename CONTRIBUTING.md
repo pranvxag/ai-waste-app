@@ -6,9 +6,9 @@ Read this, then `README.md`, then whichever of `backend/README.md` or
 
 ## What this project is
 
-An EVS-I app: photograph a waste item → AI identifies the material → app shows
-disposal instructions (fixed per material) + reuse/upcycling ideas (AI-generated per
-scan, each optionally paired with a real YouTube tutorial link). Full background and
+An EVS-I app: photograph a waste item → YOLO identifies it, with Gemini Vision taking
+over when YOLO isn't confident → app shows disposal instructions + reuse/upcycling ideas
+(AI-generated per scan, each optionally paired with a real YouTube tutorial link). Full background and
 the original scope decision is in `docs/Project_Plan.docx` — worth reading once for context on *why*
 things are built this way, not just *how*.
 
@@ -16,12 +16,16 @@ things are built this way, not just *how*.
 
 ```
 ai-waste-app/
-  backend/            Python, FastAPI. Runs the trained model, serves all API endpoints.
-    main.py           API routes (/health, /predict, /waste-info, /enhance-reuse)
+  backend/            Python, FastAPI. Runs the recognition pipeline, serves all API endpoints.
+    main.py           API routes (/health, /predict, /waste-info, /enhance-reuse) +
+                       the YOLO/Gemini orchestration in /predict
+    config.py         Thresholds, model path, API key loading. One place for all of it.
+    yolo_service.py   YOLO detection (primary) + the class map onto waste categories
+    gemini_service.py Gemini Vision (fallback for low-confidence detections)
     waste_data.py     Static category + disposal data per material class (no reuse
                        ideas - those are always AI-generated, see llm_service.py)
     llm_service.py    Groq (AI reuse ideas) + YouTube Data API integration
-    model/            Trained model files go here (not in git — see backend/README.md)
+    model/            Model weights live here (not in git — see backend/README.md)
     .env              API keys (not in git)
 
   ReLeaf/             Expo (React Native) app
@@ -64,16 +68,33 @@ hardcoded list back in. Never make disposal info or the classification itself de
 on the AI endpoint, though: those two must keep working even if Groq/YouTube are down
 or unconfigured.
 
+**YOLO is primary, Gemini is the fallback — and neither may guess.** `/predict` trusts
+YOLO only when it clears `YOLO_CONFIDENCE_THRESHOLD` *and* its label maps to a known waste
+class in `yolo_service.YOLO_CLASS_MAP`. Everything else escalates the original image to
+Gemini. That map is deliberately small: the default COCO model can't tell a plastic bottle
+from a glass one, so adding `"bottle": "plastic"` would produce confident wrong answers for
+half of all bottles. **Leaving a class out of the map is a feature** — it routes to a model
+that can actually look at the material. If neither engine is sure, `/predict` returns 422
+and the app says so; never add a "best guess" default. Change the threshold in `config.py`
+only — it must not be duplicated anywhere else.
+
+**Reuse ideas come back video-first.** `/enhance-reuse` sorts ideas so the ones with a
+YouTube tutorial come before the text-only ones, and the app renders them in the order it
+receives them. Keep the sort on the backend (one place, both sections) rather than sorting
+in the screen, and keep it stable so the model's own ordering survives within each group.
+Each "More ideas" batch is sorted on its own and appended — don't re-sort the whole list
+when new ideas arrive, or cards the user is already reading will jump around.
+
 **Scan history is the single source of truth for app state.** Total counts, the Impact
 screen, and the Home screen's "recently scanned" strip all derive from
 `ScanHistoryContext`'s `scans` array — don't create a second, separate counter or
 duplicate storage for something derivable from `scans`.
 
 **Backend changes:** add new category/disposal data to `waste_data.py`'s `WASTE_INFO`
-dict, keyed exactly matching `class_names.json` (check casing/hyphenation) — reuse
-ideas don't belong here, they're always generated live via `llm_service.py`. Never edit
-the classification logic in `main.py` without also checking `class_names.json` order
-still matches the trained model — they must stay in sync.
+dict — reuse ideas don't belong here, they're always generated live via `llm_service.py`.
+When you add a class there, add its bucket to `BUCKET_BY_CLASS` in the same file and to
+`CATEGORY_BY_CLASS` in `ReLeaf/src/utils/formatting.js` — those three must stay in sync,
+or the new class renders with the wrong badge colour.
 
 ## Workflow
 

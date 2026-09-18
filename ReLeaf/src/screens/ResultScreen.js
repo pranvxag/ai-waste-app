@@ -13,7 +13,7 @@ import { getEnhancedIdeas } from "../api/predict";
 
 export default function ResultScreen({ route, navigation }) {
   const { imageUri, result, fromHistory, isExample, exampleIcon } = route.params;
-  const bucketMeta = getBucketMeta(result.predicted_class);
+  const bucketMeta = getBucketMeta(result.predicted_class, result.bucket);
   const className = formatClassName(result.predicted_class);
   const { addScan } = useScanHistory();
 
@@ -60,6 +60,7 @@ export default function ResultScreen({ route, navigation }) {
           predictedClass: result.predicted_class,
           confidence: result.confidence,
           bucketMeta,
+          bucket: bucketMeta.bucket,
           category: result.category,
           disposal: result.disposal,
           aiIdeas: ideas,

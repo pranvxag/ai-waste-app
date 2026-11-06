@@ -36,7 +36,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from pydantic import BaseModel
@@ -46,6 +46,7 @@ import yolo_service
 from config import GEMINI_API_KEY, GEMINI_MAX_IMAGE_EDGE, YOLO_CONFIDENCE_THRESHOLD
 from llm_service import get_ai_reuse_ideas, get_youtube_link
 from waste_data import get_bucket, get_waste_info
+from logging_utils import log_event, normalize_correlation_id
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -85,15 +86,21 @@ def health():
     """`model_ready` reports the primary detector (YOLO). Gemini is reported
     separately because the app still works without it - it just loses the
     fallback for items YOLO can't identify."""
-    return {
+    result = {
         "status": "ok",
         "model_ready": yolo_service.is_available(),
         "gemini_configured": bool(GEMINI_API_KEY),
     }
+    log_event(logger, logging.INFO, "health check completed",
+              model_ready=result["model_ready"], gemini_configured=result["gemini_configured"])
+    return result
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+    file: UploadFile = File(...),
+    x_request_id: str | None = Header(default=None),
+):
     """Identify the item in an uploaded photo.
 
     YOLO runs first. Its result is used directly when it is both confident
@@ -108,15 +115,21 @@ async def predict(file: UploadFile = File(...)):
         {predicted_class, confidence, category, disposal,
          bucket, source, material, reusable}
     """
+    correlation_id = normalize_correlation_id(x_request_id)
     if file.content_type not in ("image/jpeg", "image/png", "image/jpg"):
+        log_event(logger, logging.WARNING, "scan rejected: unsupported content type",
+                  correlation_id, content_type=file.content_type)
         raise HTTPException(status_code=400, detail="Please upload a JPEG or PNG image.")
 
     contents = await file.read()
     try:
         image = Image.open(io.BytesIO(contents)).convert("RGB")
     except Exception:
+        log_event(logger, logging.WARNING, "scan rejected: unreadable image", correlation_id)
         raise HTTPException(status_code=400, detail="Could not read the uploaded image.")
 
+    log_event(logger, logging.INFO, "scan started", correlation_id,
+              content_type=file.content_type, image_bytes=len(contents))
     detection = yolo_service.detect(image)
 
     # --- Confidence check: the one decision point in the whole pipeline ---
@@ -132,23 +145,19 @@ async def predict(file: UploadFile = File(...)):
     high_confidence = mapped_class is not None and confidence >= YOLO_CONFIDENCE_THRESHOLD
 
     if high_confidence:
-        logger.info(
-            "scan: yolo_label=%s mapped=%s conf=%.2f decision=HIGH_CONFIDENCE source=yolo",
-            yolo_label, mapped_class, confidence,
-        )
+        log_event(logger, logging.INFO, "scan completed", correlation_id,
+                  source="yolo", decision="high_confidence", confidence=round(confidence, 2))
         return _result_from_yolo(mapped_class, confidence)
 
-    logger.info(
-        "scan: yolo_label=%s mapped=%s conf=%.2f decision=LOW_CONFIDENCE reason=%s source=gemini",
-        yolo_label, mapped_class, confidence, reason,
-    )
+    log_event(logger, logging.INFO, "scan escalating to Gemini", correlation_id,
+              decision="low_confidence", reason=reason, confidence=round(confidence, 2))
 
     gemini_bytes, mime_type = _prepare_for_gemini(image, contents, file.content_type)
     try:
         gemini_result = gemini_service.identify_waste_from_image(gemini_bytes, mime_type)
     except gemini_service.RateLimited:
         # Don't blame the photo for a quota problem - retaking it won't help.
-        logger.info("scan: result=RATE_LIMITED (Gemini quota exhausted)")
+        log_event(logger, logging.WARNING, "scan rate limited by Gemini", correlation_id)
         raise HTTPException(
             status_code=429,
             detail="Too many scans in a row - wait a few seconds and try again.",
@@ -157,7 +166,7 @@ async def predict(file: UploadFile = File(...)):
     if gemini_result is None:
         # Neither engine could identify the item. Say so plainly - the app shows
         # this message and the user can simply scan again. Never invent a class.
-        logger.info("scan: result=UNIDENTIFIED (YOLO uncertain, Gemini unavailable or unsure)")
+        log_event(logger, logging.INFO, "scan unidentified", correlation_id)
         raise HTTPException(
             status_code=422,
             detail=(
@@ -166,10 +175,9 @@ async def predict(file: UploadFile = File(...)):
             ),
         )
 
-    logger.info(
-        "scan: gemini_object=%s bucket=%s conf=%.2f source=gemini",
-        gemini_result["object"], gemini_result["bucket"], gemini_result["confidence"],
-    )
+    log_event(logger, logging.INFO, "scan completed", correlation_id,
+              source="gemini", bucket=gemini_result["bucket"],
+              confidence=round(gemini_result["confidence"], 2))
     return _result_from_gemini(gemini_result)
 
 
@@ -274,7 +282,10 @@ class EnhanceReuseRequest(BaseModel):
 
 
 @app.post("/enhance-reuse")
-def enhance_reuse(payload: EnhanceReuseRequest):
+def enhance_reuse(
+    payload: EnhanceReuseRequest,
+    x_request_id: str | None = Header(default=None),
+):
     """The app's only source of reuse ideas: 3 LLM-generated ideas per call,
     each paired with a real YouTube tutorial link where one is found. Called
     once for the initial "Reuse ideas" batch, and again (with `exclude` set
@@ -291,6 +302,9 @@ def enhance_reuse(payload: EnhanceReuseRequest):
     Allowed to fail quietly - if the AI/YouTube services are down or the API
     keys aren't configured, this returns an empty list with a 200 rather than
     a 500; the app shows a clean empty/error state instead of a crash."""
+    correlation_id = normalize_correlation_id(x_request_id)
+    log_event(logger, logging.INFO, "reuse ideas requested", correlation_id,
+              excluded_count=len(payload.exclude))
     try:
         ideas = get_ai_reuse_ideas(payload.predicted_class, payload.category, exclude=payload.exclude)
 
@@ -299,6 +313,7 @@ def enhance_reuse(payload: EnhanceReuseRequest):
         already_shown = {idea.strip().lower() for idea in payload.exclude}
         ideas = [idea for idea in ideas if idea.strip().lower() not in already_shown]
         if not ideas:
+            log_event(logger, logging.INFO, "reuse ideas unavailable", correlation_id)
             return {"ai_ideas": []}
 
         # One YouTube search per idea, run together rather than one after
@@ -314,6 +329,10 @@ def enhance_reuse(payload: EnhanceReuseRequest):
         # ones to the back).
         ai_ideas.sort(key=lambda item: item["video"] is None)
 
+        log_event(logger, logging.INFO, "reuse ideas completed", correlation_id,
+                  idea_count=len(ai_ideas))
         return {"ai_ideas": ai_ideas}
-    except Exception:
+    except Exception as err:
+        log_event(logger, logging.ERROR, "reuse ideas failed", correlation_id,
+                  error_type=type(err).__name__)
         return {"ai_ideas": []}

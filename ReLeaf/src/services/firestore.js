@@ -10,14 +10,13 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { auth, db, firebaseProjectId, firestoreDatabaseId } from "../firebase";
+import { logger } from "../utils/logging";
 
 function requireAuthenticatedUid(uid) {
   const currentUid = auth?.currentUser?.uid;
-  console.info("[Firestore] request", {
+  logger.debug("Firestore", "Authenticated request", {
     project: firebaseProjectId || "(missing)",
     database: firestoreDatabaseId,
-    authenticatedUid: currentUid || null,
-    requestedUid: uid,
   });
   if (!currentUid || currentUid !== uid) {
     throw new Error("Firestore request requires the currently authenticated user.");
@@ -27,22 +26,19 @@ function requireAuthenticatedUid(uid) {
 
 export async function getUserProfile(uid) {
   requireAuthenticatedUid(uid);
-  const path = `users/${uid}`;
-  console.info("[Firestore] get document", path);
+  logger.debug("Firestore", "Get user profile");
   return getDoc(doc(db, "users", uid));
 }
 
 export async function createUserProfile(uid, profile) {
   requireAuthenticatedUid(uid);
-  const path = `users/${uid}`;
-  console.info("[Firestore] set document", path);
+  logger.debug("Firestore", "Set user profile");
   return setDoc(doc(db, "users", uid), profile, { merge: true });
 }
 
 export function getScanHistory(uid, onData, onError) {
   requireAuthenticatedUid(uid);
-  const path = `users/${uid}/scans`;
-  console.info("[Firestore] listen collection", path);
+  logger.info("Firestore", "Listening for scan history");
   const scansQuery = query(
     collection(db, "users", uid, "scans"),
     orderBy("scannedAt", "desc")
@@ -52,8 +48,7 @@ export function getScanHistory(uid, onData, onError) {
 
 export async function saveScan(uid, scanId, scan) {
   requireAuthenticatedUid(uid);
-  const path = `users/${uid}/scans/${scanId}`;
-  console.info("[Firestore] set document", path);
+  logger.info("Firestore", "Saving scan", { scanId });
   return setDoc(doc(db, "users", uid, "scans", scanId), {
     scanId,
     ...scan,
@@ -63,7 +58,6 @@ export async function saveScan(uid, scanId, scan) {
 
 export async function deleteScan(uid, scanId) {
   requireAuthenticatedUid(uid);
-  const path = `users/${uid}/scans/${scanId}`;
-  console.info("[Firestore] delete document", path);
+  logger.info("Firestore", "Deleting scan", { scanId });
   return deleteDoc(doc(db, "users", uid, "scans", scanId));
 }

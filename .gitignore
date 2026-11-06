@@ -16,3 +16,5 @@ mobile-app/dist/
 
 # OS
 .DS_Store
+.agents
+.claude

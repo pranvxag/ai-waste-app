@@ -10,6 +10,7 @@ import MaterialIdCard from "../components/MaterialIdCard";
 import { getBucketMeta, formatClassName } from "../utils/formatting";
 import { useScanHistory } from "../context/ScanHistoryContext";
 import { getEnhancedIdeas } from "../api/predict";
+import { logger } from "../utils/logging";
 
 export default function ResultScreen({ route, navigation }) {
   const { imageUri, result, scanId, fromHistory, isExample, exampleIcon } = route.params;
@@ -46,7 +47,7 @@ export default function ResultScreen({ route, navigation }) {
     async function loadInitialIdeas() {
       let ideas = [];
       try {
-        ideas = await getEnhancedIdeas(result.predicted_class, result.category);
+        ideas = await getEnhancedIdeas(result.predicted_class, result.category, [], scanId);
       } catch {
         ideas = []; // clean empty state below, never a crash
       }
@@ -74,7 +75,7 @@ export default function ResultScreen({ route, navigation }) {
           }, setSaveProgress);
           setSaveState("saved");
         } catch (error) {
-          console.error("Could not save scan", error);
+          logger.error("ResultScreen", "Could not save scan", { scanId, error });
           setSaveState("failed");
         }
       }
@@ -92,7 +93,7 @@ export default function ResultScreen({ route, navigation }) {
     setMoreFailed(false);
     try {
       const alreadyShown = [...(reuseIdeas || []), ...moreIdeas].map((item) => item.idea);
-      const fresh = await getEnhancedIdeas(result.predicted_class, result.category, alreadyShown);
+      const fresh = await getEnhancedIdeas(result.predicted_class, result.category, alreadyShown, scanId);
 
       // Safety-net dedup on top of the backend's own exclude handling.
       const shownLower = new Set(alreadyShown.map((idea) => idea.trim().toLowerCase()));

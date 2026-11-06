@@ -75,6 +75,10 @@ Each signed-in user can read and write only their own `users/{uid}/scans` docume
 metadata is synced to Firestore; image URIs remain device-local because gallery/camera URIs
 are not portable between phones.
 
+Frontend events use the redacted logger in `src/utils/logging.js`. Scan and API
+events carry a stable correlation ID; credentials, tokens, private URLs, and
+personal profile fields are not written to logs.
+
 ## 5. Run it
 
 ```bash

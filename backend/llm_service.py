@@ -12,6 +12,7 @@ Requires GROQ_API_KEY and YOUTUBE_API_KEY in the environment (see .env.example).
 """
 
 import json
+import logging
 import os
 import re
 
@@ -34,6 +35,7 @@ GROQ_MODEL = "openai/gpt-oss-20b"
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 
 REQUEST_TIMEOUT = 10  # seconds
+logger = logging.getLogger(__name__)
 
 
 def get_ai_reuse_ideas(predicted_class: str, category: str, exclude: list[str] | None = None) -> list[str]:
@@ -92,7 +94,8 @@ def get_ai_reuse_ideas(predicted_class: str, category: str, exclude: list[str] |
 
         # Keep only well-formed string ideas, capped at 3.
         return [idea.strip() for idea in ideas if isinstance(idea, str) and idea.strip()][:3]
-    except Exception:
+    except Exception as err:
+        logger.warning("reuse idea generation failed: %s", type(err).__name__)
         return []
 
 
@@ -149,5 +152,6 @@ def get_youtube_link(query: str) -> dict | None:
             "url": f"https://www.youtube.com/watch?v={video_id}",
             "thumbnail_url": f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
         }
-    except Exception:
+    except Exception as err:
+        logger.warning("YouTube lookup failed: %s", type(err).__name__)
         return None

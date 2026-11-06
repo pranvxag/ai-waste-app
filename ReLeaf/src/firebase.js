@@ -8,6 +8,7 @@ import {
   getReactNativePersistence,
   initializeAuth,
 } from "firebase/auth";
+import { logger } from "./utils/logging";
 
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -28,8 +29,10 @@ const app = firebaseConfigured
     : initializeApp(firebaseConfig)
   : null;
 
-console.info("[Firebase] project", firebaseProjectId || "(missing)");
-console.info("[Firebase] Firestore database", firestoreDatabaseId);
+logger.info("Firebase", "Firebase client configured", {
+  projectConfigured: Boolean(firebaseProjectId),
+  firestoreDatabase: firestoreDatabaseId,
+});
 
 let auth = null;
 if (app) {

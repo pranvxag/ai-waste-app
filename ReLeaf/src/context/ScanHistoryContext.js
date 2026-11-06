@@ -1,35 +1,28 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUCKET_META } from "../utils/formatting";
 import { db } from "../firebase";
 import { deleteScanImage, uploadScanImage } from "../services/scanStorage";
 import { deleteScan, getScanHistory, saveScan } from "../services/firestore";
 import { useAuth } from "./AuthContext";
+import { createScanId, logger } from "../utils/logging";
 
 const STORAGE_KEY = "scan_history_v1";
 const ScanHistoryContext = createContext(null);
 const pendingScanSaves = new Map();
 const completedScanIds = new Set();
 
-function dedupeScans(scans) {
-  const seen = new Set();
-  return scans.filter((scan) => {
-    const id = scan.scanId || scan.id;
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-}
-
 function normalizeScan(scanDoc) {
   const data = scanDoc.data ? scanDoc.data() : scanDoc;
   const scannedAt = data.scannedAt?.toMillis?.() || data.scannedAt || Date.now();
+  const scanId = data.scanId || data.id || scanDoc.id;
+  if (!scanId) return null;
   return {
-    id: data.scanId || scanDoc.id,
-    scanId: data.scanId || scanDoc.id,
+    id: scanId,
+    scanId,
     timestamp: scannedAt,
-    imageUri: data.imageURL || null,
-    predictedClass: data.wasteType || "",
+    imageUri: data.imageURL || data.imageUri || null,
+    predictedClass: data.wasteType || data.predictedClass || "",
     confidence: data.confidence ?? null,
     material: data.material || "",
     recyclable: data.recyclable ?? null,
@@ -44,34 +37,56 @@ function normalizeScan(scanDoc) {
   };
 }
 
+function mergeScans(primary, secondary = []) {
+  const byId = new Map();
+  [...primary, ...secondary].forEach((scan) => {
+    const normalized = normalizeScan(scan);
+    if (normalized && !byId.has(normalized.scanId)) byId.set(normalized.scanId, normalized);
+  });
+  return [...byId.values()].sort((a, b) => b.timestamp - a.timestamp);
+}
+
 export function ScanHistoryProvider({ children }) {
   const [scans, setScans] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const remoteHistoryLoaded = useRef(false);
   const { user } = useAuth();
 
   useEffect(() => {
     let active = true;
     if (!user?.uid || !db) {
+      remoteHistoryLoaded.current = false;
       setScans([]);
       setLoaded(true);
       return undefined;
     }
+    remoteHistoryLoaded.current = false;
     const cacheKey = `${STORAGE_KEY}_${user.uid}`;
     AsyncStorage.getItem(cacheKey)
       .then((value) => {
-        if (active && value) setScans(dedupeScans(JSON.parse(value).scans || []));
+        if (active && value) {
+          const cachedScans = JSON.parse(value).scans || [];
+          setScans((previous) => remoteHistoryLoaded.current
+            ? previous
+            : mergeScans(cachedScans, previous));
+        }
       })
-      .catch((error) => console.error("Could not load local scan history", error));
+      .catch((error) => logger.error("ScanHistory", "Could not load local scan history", { error }));
 
     const unsubscribe = getScanHistory(
       user.uid,
       (snapshot) => {
         if (!active) return;
-        setScans(dedupeScans(snapshot.docs.map(normalizeScan)));
+        remoteHistoryLoaded.current = true;
+        const remoteScans = snapshot.docs.map(normalizeScan).filter(Boolean);
+        setScans((previous) => mergeScans(
+          remoteScans,
+          previous.filter((scan) => pendingScanSaves.has(scan.scanId))
+        ));
         setLoaded(true);
       },
       (error) => {
-        console.error("Could not sync scan history", error);
+        logger.error("ScanHistory", "Could not sync scan history", { error });
         if (active) setLoaded(true);
       }
     );
@@ -84,11 +99,11 @@ export function ScanHistoryProvider({ children }) {
   useEffect(() => {
     if (!loaded || !user?.uid) return;
     AsyncStorage.setItem(`${STORAGE_KEY}_${user.uid}`, JSON.stringify({ scans }))
-      .catch((error) => console.error("Could not cache scan history", error));
+      .catch((error) => logger.error("ScanHistory", "Could not cache scan history", { error }));
   }, [scans, loaded, user?.uid]);
 
   async function addScan(scanData, onProgress) {
-    const scanId = scanData.scanId || `scan_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const scanId = scanData.scanId || createScanId();
     if (completedScanIds.has(scanId)) return scanId;
     if (pendingScanSaves.has(scanId)) return pendingScanSaves.get(scanId);
 
@@ -112,7 +127,7 @@ export function ScanHistoryProvider({ children }) {
           aiIdeas: scanData.aiIdeas || [],
         });
         completedScanIds.add(scanId);
-        setScans((previous) => dedupeScans([
+        setScans((previous) => mergeScans([
           normalizeScan({
             ...scanData,
             scanId,
@@ -123,13 +138,13 @@ export function ScanHistoryProvider({ children }) {
             disposalMethod: scanData.disposal,
             detectionSource: scanData.source,
           }),
-          ...previous,
-        ]));
+        ], previous));
+        logger.info("ScanHistory", "Scan saved", { scanId });
         return scanId;
       } catch (error) {
         if (uploaded) {
           await deleteScanImage(uploaded.storagePath).catch((cleanupError) => {
-            console.error("Could not clean up failed scan upload", cleanupError);
+            logger.error("ScanHistory", "Could not clean up failed scan upload", { scanId, error: cleanupError });
           });
         }
         throw error;
@@ -145,9 +160,10 @@ export function ScanHistoryProvider({ children }) {
   }
 
   async function removeScan(scan) {
-    await deleteScan(user.uid, scan.scanId || scan.id);
+    const scanId = scan.scanId || scan.id;
+    await deleteScan(user.uid, scanId);
     if (scan.storagePath) await deleteScanImage(scan.storagePath);
-    setScans((previous) => previous.filter((item) => item.id !== scan.id));
+    setScans((previous) => previous.filter((item) => item.scanId !== scanId));
   }
 
   const totalScans = scans.length;

@@ -1,5 +1,6 @@
 import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { storage } from "../firebase";
+import { logger } from "../utils/logging";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
@@ -10,6 +11,7 @@ function getImageType(blob) {
 }
 
 export async function uploadScanImage(imageUri, uid, scanId, onProgress) {
+  logger.info("Storage", "Uploading scan image", { scanId });
   if (!storage) throw new Error("Firebase Storage is not configured.");
   if (!imageUri) throw new Error("The scan image is unavailable.");
 
@@ -39,5 +41,6 @@ export async function uploadScanImage(imageUri, uid, scanId, onProgress) {
 
 export async function deleteScanImage(storagePath) {
   if (!storage || !storagePath) return;
+  logger.info("Storage", "Deleting scan image");
   await deleteObject(ref(storage, storagePath));
 }

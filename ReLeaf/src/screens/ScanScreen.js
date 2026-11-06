@@ -8,6 +8,7 @@ import PrimaryButton from "../components/PrimaryButton";
 import SecondaryButton from "../components/SecondaryButton";
 import CloseButton from "../components/CloseButton";
 import { identifyItem } from "../api/predict";
+import { createScanId, logger } from "../utils/logging";
 
 export default function ScanScreen({ navigation }) {
   const [imageUri, setImageUri] = useState(null);
@@ -36,11 +37,14 @@ export default function ScanScreen({ navigation }) {
   async function handleIdentify() {
     if (!imageUri || loading) return;
     setLoading(true);
-    const scanId = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const scanId = createScanId();
+    logger.info("ScanScreen", "Starting scan", { scanId });
     try {
-      const result = await identifyItem(imageUri);
+      const result = await identifyItem(imageUri, scanId);
+      logger.info("ScanScreen", "Scan identified", { scanId, source: result.source });
       navigation.replace("Result", { imageUri, result, scanId });
     } catch (err) {
+      logger.error("ScanScreen", "Scan identification failed", { scanId, error: err });
       Alert.alert(
         "Couldn't identify that item",
         err.message || "Check that the backend server is running and reachable."

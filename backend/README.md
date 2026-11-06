@@ -139,6 +139,20 @@ to the ngrok account, not the machine, so it stays the same everywhere.
 
 ## Endpoints
 
+## Logging
+
+Backend events use timestamped structured logs with levels, module names, and a
+request correlation ID. The app sends its stable scan ID as `X-Request-ID`, so
+the `/predict` and `/enhance-reuse` events for one scan can be traced together.
+Credentials, tokens, private URLs, and personal data are excluded.
+
+Example:
+
+```
+2026-11-06T12:53:08+00:00 INFO main: scan started correlation_id='scan_...'
+2026-11-06T12:53:09+00:00 INFO main: scan completed source='gemini' bucket='recyclable' correlation_id='scan_...'
+```
+
 - `GET /health` — status check. `model_ready` is whether YOLO loaded successfully;
   `gemini_configured` is whether the fallback has an API key.
 - `POST /predict` — multipart form upload, field name `file`. Runs the YOLO →

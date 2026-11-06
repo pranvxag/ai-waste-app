@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import { File, UploadType } from "expo-file-system";
 import { getApiBaseUrl } from "./config";
+import { logger } from "../utils/logging";
 
 // Skips ngrok's free-tier "you're about to visit an ngrok site" browser
 // warning interstitial, which otherwise intercepts requests that look like
@@ -15,8 +16,9 @@ const NGROK_HEADERS = { "ngrok-skip-browser-warning": "true" };
  * { predicted_class, confidence, category, disposal }
  * Reuse ideas aren't included here - fetch them separately with getEnhancedIdeas().
  */
-export async function identifyItem(imageUri) {
+export async function identifyItem(imageUri, correlationId) {
   const baseUrl = await getApiBaseUrl();
+  logger.info("predict", "Submitting image for identification", { correlationId });
 
   if (Platform.OS === "web") {
     // React Native's { uri, name, type } shorthand only works with RN's own
@@ -32,7 +34,7 @@ export async function identifyItem(imageUri) {
       method: "POST",
       body: formData,
       // Do not set Content-Type manually - fetch sets the multipart boundary itself.
-      headers: NGROK_HEADERS,
+      headers: { ...NGROK_HEADERS, "X-Request-ID": correlationId },
     });
 
     if (!response.ok) {
@@ -53,7 +55,7 @@ export async function identifyItem(imageUri) {
     uploadType: UploadType.MULTIPART,
     fieldName: "file",
     mimeType: "image/jpeg",
-    headers: NGROK_HEADERS,
+    headers: { ...NGROK_HEADERS, "X-Request-ID": correlationId },
   });
 
   let body;
@@ -82,11 +84,11 @@ export async function identifyItem(imageUri) {
  * everything currently displayed (both sections) when asking for more, so
  * the backend/model avoids repeating them.
  */
-export async function getEnhancedIdeas(predictedClass, category, exclude = []) {
+export async function getEnhancedIdeas(predictedClass, category, exclude = [], correlationId) {
   const baseUrl = await getApiBaseUrl();
   const response = await fetch(`${baseUrl}/enhance-reuse`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...NGROK_HEADERS },
+    headers: { "Content-Type": "application/json", ...NGROK_HEADERS, "X-Request-ID": correlationId },
     body: JSON.stringify({ predicted_class: predictedClass, category, exclude }),
   });
 
@@ -106,10 +108,10 @@ export async function getEnhancedIdeas(predictedClass, category, exclude = []) {
  * result are fetched separately via getEnhancedIdeas(), same as any real scan.
  * Returns { predicted_class, category, disposal }.
  */
-export async function getWasteInfo(predictedClass) {
+export async function getWasteInfo(predictedClass, correlationId) {
   const baseUrl = await getApiBaseUrl();
   const response = await fetch(`${baseUrl}/waste-info/${encodeURIComponent(predictedClass)}`, {
-    headers: NGROK_HEADERS,
+    headers: { ...NGROK_HEADERS, "X-Request-ID": correlationId },
   });
 
   if (!response.ok) {

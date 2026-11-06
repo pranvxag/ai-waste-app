@@ -10,6 +10,7 @@ import { GoogleAuthProvider } from "firebase/auth";
 import { serverTimestamp } from "firebase/firestore";
 import { auth, db, firebaseConfigured } from "../firebase";
 import { createUserProfile, getUserProfile } from "../services/firestore";
+import { logger } from "../utils/logging";
 
 const AuthContext = createContext(null);
 
@@ -45,7 +46,7 @@ export function AuthProvider({ children }) {
         const refreshed = await getUserProfile(nextUser.uid);
         setProfile({ ...(refreshed.data() || {}), ...profileData });
       } catch (error) {
-        console.error("Could not load Firebase user profile", error);
+        logger.error("Auth", "Could not load Firebase user profile", { error });
       } finally {
         setLoading(false);
       }

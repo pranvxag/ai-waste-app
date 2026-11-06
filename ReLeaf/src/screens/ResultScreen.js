@@ -16,6 +16,8 @@ export default function ResultScreen({ route, navigation }) {
   const bucketMeta = getBucketMeta(result.predicted_class, result.bucket);
   const className = formatClassName(result.predicted_class);
   const { addScan } = useScanHistory();
+  const [saveState, setSaveState] = useState("idle");
+  const [saveProgress, setSaveProgress] = useState(0);
 
   // "Reuse ideas" - the app's only source of reuse ideas is the AI, so this
   // is fetched once, automatically, for every result. null = still loading;
@@ -55,16 +57,25 @@ export default function ResultScreen({ route, navigation }) {
       // what was actually generated - not for example objects, which were
       // never really scanned and shouldn't show up in "Recently scanned".
       if (!isExample) {
-        addScan({
-          imageUri,
-          predictedClass: result.predicted_class,
-          confidence: result.confidence,
-          bucketMeta,
-          bucket: bucketMeta.bucket,
-          category: result.category,
-          disposal: result.disposal,
-          aiIdeas: ideas,
-        });
+        setSaveState("saving");
+        try {
+          await addScan({
+            imageUri,
+            predictedClass: result.predicted_class,
+            confidence: result.confidence,
+            bucket: bucketMeta.bucket,
+            category: result.category,
+            disposal: result.disposal,
+            material: result.material,
+            recyclable: result.recyclable,
+            source: result.source,
+            aiIdeas: ideas,
+          }, setSaveProgress);
+          setSaveState("saved");
+        } catch (error) {
+          console.error("Could not save scan", error);
+          setSaveState("failed");
+        }
       }
     }
 
@@ -110,6 +121,19 @@ export default function ResultScreen({ route, navigation }) {
           isExample={isExample}
           exampleIcon={exampleIcon}
         />
+        {!isExample && saveState === "saving" && (
+          <Text style={[type.caption, styles.saveStatus]}>
+            Saving scan securely... {Math.round(saveProgress * 100)}%
+          </Text>
+        )}
+        {!isExample && saveState === "saved" && (
+          <Text style={[type.caption, styles.saveStatus]}>Scan saved to your history.</Text>
+        )}
+        {!isExample && saveState === "failed" && (
+          <Text style={[type.caption, styles.saveError]}>
+            Result shown, but this scan could not be saved to the cloud.
+          </Text>
+        )}
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -245,6 +269,15 @@ const styles = StyleSheet.create({
   },
   noIdeasText: {
     textAlign: "center",
+  },
+  saveStatus: {
+    textAlign: "center",
+    marginTop: -spacing.md,
+  },
+  saveError: {
+    textAlign: "center",
+    color: colors.hazardous,
+    marginTop: -spacing.md,
   },
   aiCard: {
     width: 240,

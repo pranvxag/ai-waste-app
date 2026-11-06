@@ -15,6 +15,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, type, spacing, radii } from "../theme/theme";
 import { useScanHistory } from "../context/ScanHistoryContext";
+import { useAuth } from "../context/AuthContext";
 import { formatClassName } from "../utils/formatting";
 import { getWasteInfo } from "../api/predict";
 import { EXAMPLE_OBJECTS, COMPACT_COUNT } from "../utils/exampleObjects";
@@ -28,6 +29,7 @@ const ECO_FACTS = [
 
 export default function HomeScreen({ navigation }) {
   const { scans, totalScans } = useScanHistory();
+  const { profile } = useAuth();
   const [fact, setFact] = useState(ECO_FACTS[0]);
   const [loadingExample, setLoadingExample] = useState(null); // predictedClass currently loading, or null
   const [showAllExamples, setShowAllExamples] = useState(false);
@@ -94,6 +96,7 @@ export default function HomeScreen({ navigation }) {
             <MaterialCommunityIcons name="recycle-variant" size={28} color={colors.ink} />
             <Text style={styles.wordmark}>ReLeaf</Text>
           </View>
+          <Text style={type.label}>Welcome, {profile?.name || "there"}</Text>
           <Text style={styles.headline}>Know what it is.{"\n"}Know what to do with it.</Text>
           <Text style={type.body}>
             Photograph any household item to identify what it's made of, how to

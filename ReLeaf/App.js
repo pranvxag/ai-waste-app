@@ -98,26 +98,26 @@ function AuthenticatedApp() {
   if (!user) return <LoginScreen />;
 
   return (
-    <SafeAreaProvider>
-      <ScanHistoryProvider>
-        <StatusBar barStyle="dark-content" />
-        <NavigationContainer>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="MainTabs" component={MainTabs} />
-            <Stack.Screen name="Scan" component={ScanScreen} />
-            <Stack.Screen name="Result" component={ResultScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </ScanHistoryProvider>
-    </SafeAreaProvider>
+    <ScanHistoryProvider>
+      <StatusBar barStyle="dark-content" />
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <Stack.Screen name="Scan" component={ScanScreen} />
+          <Stack.Screen name="Result" component={ResultScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </ScanHistoryProvider>
   );
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AuthenticatedApp />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <AuthenticatedApp />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
 

@@ -1,6 +1,8 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 import {
   getAuth,
   getReactNativePersistence,
@@ -16,6 +18,8 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
+export const firebaseProjectId = firebaseConfig.projectId;
+export const firestoreDatabaseId = "(default)";
 export const firebaseConfigured = Object.values(firebaseConfig).every(Boolean);
 
 const app = firebaseConfigured
@@ -24,12 +28,17 @@ const app = firebaseConfigured
     : initializeApp(firebaseConfig)
   : null;
 
+console.info("[Firebase] project", firebaseProjectId || "(missing)");
+console.info("[Firebase] Firestore database", firestoreDatabaseId);
+
 let auth = null;
 if (app) {
   try {
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage),
-    });
+    auth = Platform.OS === "web"
+      ? getAuth(app)
+      : initializeAuth(app, {
+          persistence: getReactNativePersistence(AsyncStorage),
+        });
   } catch (error) {
     if (error.code === "auth/already-initialized") auth = getAuth(app);
     else throw error;
@@ -37,4 +46,5 @@ if (app) {
 }
 
 export { auth };
-export const db = app ? getFirestore(app) : null;
+export const db = app ? getFirestore(app, firestoreDatabaseId) : null;
+export const storage = app ? getStorage(app) : null;

@@ -3,11 +3,36 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.totalScans == 0
+        && request.resource.data.totalPoints == 0;
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && (
+          (!('totalScans' in resource.data) && request.resource.data.totalScans == 0)
+          || request.resource.data.totalScans == resource.data.totalScans
+        )
+        && (
+          (!('totalPoints' in resource.data) && request.resource.data.totalPoints == 0)
+          || request.resource.data.totalPoints == resource.data.totalPoints
+        );
     }
 
     match /users/{userId}/scans/{scanId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.scanId == scanId
+        && request.resource.data.wasteType is string
+        && request.resource.data.scannedAt is timestamp
+        && request.resource.data.imageURL is string
+        && request.resource.data.storagePath is string;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
     }
   }
 }

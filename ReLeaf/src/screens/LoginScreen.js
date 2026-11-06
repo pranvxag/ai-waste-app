@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Alert } from "react-native";
+import { View, Text, StyleSheet, Alert, TextInput, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useIdTokenAuthRequest } from "expo-auth-session/providers/google";
@@ -11,12 +11,31 @@ import PrimaryButton from "../components/PrimaryButton";
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
-  const { configured, signInWithGoogleToken } = useAuth();
+  const { configured, signInWithGoogleToken, signInWithEmail, registerWithEmail } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [registering, setRegistering] = useState(false);
   const [request, response, promptAsync] = useIdTokenAuthRequest({
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   });
   const [signingIn, setSigningIn] = useState(false);
+
+  async function handleEmailAuth() {
+    if (!email.trim() || password.length < 6) {
+      Alert.alert("Check your details", "Enter an email and a password of at least 6 characters.");
+      return;
+    }
+    setSigningIn(true);
+    try {
+      if (registering) await registerWithEmail(email, password);
+      else await signInWithEmail(email, password);
+    } catch (error) {
+      Alert.alert("Couldn't sign in", error.message || "Check your email and password.");
+    } finally {
+      setSigningIn(false);
+    }
+  }
 
   useEffect(() => {
     if (response?.type !== "success") return;
@@ -61,6 +80,34 @@ export default function LoginScreen() {
           onPress={() => promptAsync()}
           icon={<MaterialCommunityIcons name="google" size={20} color={colors.white} />}
         />
+        <Text style={styles.or}>or use email</Text>
+        <TextInput
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Email"
+          placeholderTextColor={colors.inkSoft}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          style={styles.input}
+        />
+        <TextInput
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Password"
+          placeholderTextColor={colors.inkSoft}
+          secureTextEntry
+          style={styles.input}
+        />
+        <PrimaryButton
+          label={registering ? "Create account" : "Sign in with email"}
+          loading={signingIn}
+          onPress={handleEmailAuth}
+        />
+        <Pressable onPress={() => setRegistering((value) => !value)}>
+          <Text style={styles.switchAuth}>
+            {registering ? "Already have an account? Sign in" : "New here? Create an account"}
+          </Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -76,4 +123,16 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   description: { textAlign: "center", maxWidth: 340 },
+  or: { ...type.caption, marginVertical: spacing.xs },
+  input: {
+    width: "100%",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 12,
+    color: colors.ink,
+  },
+  switchAuth: { ...type.label, color: colors.accent },
 });

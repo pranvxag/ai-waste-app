@@ -34,10 +34,12 @@ export default function ScanScreen({ navigation }) {
   }
 
   async function handleIdentify() {
+    if (!imageUri || loading) return;
     setLoading(true);
+    const scanId = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     try {
       const result = await identifyItem(imageUri);
-      navigation.replace("Result", { imageUri, result });
+      navigation.replace("Result", { imageUri, result, scanId });
     } catch (err) {
       Alert.alert(
         "Couldn't identify that item",

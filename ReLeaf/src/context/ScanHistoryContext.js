@@ -8,6 +8,18 @@ import { useAuth } from "./AuthContext";
 
 const STORAGE_KEY = "scan_history_v1";
 const ScanHistoryContext = createContext(null);
+const pendingScanSaves = new Map();
+const completedScanIds = new Set();
+
+function dedupeScans(scans) {
+  const seen = new Set();
+  return scans.filter((scan) => {
+    const id = scan.scanId || scan.id;
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
 
 function normalizeScan(scanDoc) {
   const data = scanDoc.data ? scanDoc.data() : scanDoc;
@@ -47,7 +59,7 @@ export function ScanHistoryProvider({ children }) {
     const cacheKey = `${STORAGE_KEY}_${user.uid}`;
     AsyncStorage.getItem(cacheKey)
       .then((value) => {
-        if (active && value) setScans(JSON.parse(value).scans || []);
+        if (active && value) setScans(dedupeScans(JSON.parse(value).scans || []));
       })
       .catch((error) => console.error("Could not load local scan history", error));
 
@@ -55,7 +67,7 @@ export function ScanHistoryProvider({ children }) {
       user.uid,
       (snapshot) => {
         if (!active) return;
-        setScans(snapshot.docs.map(normalizeScan));
+        setScans(dedupeScans(snapshot.docs.map(normalizeScan)));
         setLoaded(true);
       },
       (error) => {
@@ -76,47 +88,59 @@ export function ScanHistoryProvider({ children }) {
   }, [scans, loaded, user?.uid]);
 
   async function addScan(scanData, onProgress) {
-    const scanId = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    let uploaded = null;
+    const scanId = scanData.scanId || `scan_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    if (completedScanIds.has(scanId)) return scanId;
+    if (pendingScanSaves.has(scanId)) return pendingScanSaves.get(scanId);
 
-    try {
-      uploaded = await uploadScanImage(scanData.imageUri, user.uid, scanId, onProgress);
-      await saveScan(user.uid, scanId, {
-        wasteType: scanData.predictedClass || "",
-        confidence: scanData.confidence ?? null,
-        material: scanData.material || scanData.predictedClass || "",
-        recyclable: scanData.recyclable ?? null,
-        disposalMethod: scanData.disposal || "",
-        environmentalImpact: scanData.environmentalImpact || "",
-        pointsEarned: scanData.pointsEarned || 0,
-        imageURL: uploaded.downloadURL,
-        storagePath: uploaded.storagePath,
-        detectionSource: scanData.source || "unknown",
-        category: scanData.category || "",
-        bucket: scanData.bucket || "general",
-        aiIdeas: scanData.aiIdeas || [],
-      });
-      setScans((previous) => [
-        normalizeScan({
-          ...scanData,
-          scanId,
+    const savePromise = (async () => {
+      let uploaded = null;
+      try {
+        uploaded = await uploadScanImage(scanData.imageUri, user.uid, scanId, onProgress);
+        await saveScan(user.uid, scanId, {
+          wasteType: scanData.predictedClass || "",
+          confidence: scanData.confidence ?? null,
+          material: scanData.material || scanData.predictedClass || "",
+          recyclable: scanData.recyclable ?? null,
+          disposalMethod: scanData.disposal || "",
+          environmentalImpact: scanData.environmentalImpact || "",
+          pointsEarned: scanData.pointsEarned || 0,
           imageURL: uploaded.downloadURL,
           storagePath: uploaded.storagePath,
-          scannedAt: Date.now(),
-          wasteType: scanData.predictedClass,
-          disposalMethod: scanData.disposal,
-          detectionSource: scanData.source,
-        }),
-        ...previous,
-      ]);
-      return scanId;
-    } catch (error) {
-      if (uploaded) {
-        await deleteScanImage(uploaded.storagePath).catch((cleanupError) => {
-          console.error("Could not clean up failed scan upload", cleanupError);
+          detectionSource: scanData.source || "unknown",
+          category: scanData.category || "",
+          bucket: scanData.bucket || "general",
+          aiIdeas: scanData.aiIdeas || [],
         });
+        completedScanIds.add(scanId);
+        setScans((previous) => dedupeScans([
+          normalizeScan({
+            ...scanData,
+            scanId,
+            imageURL: uploaded.downloadURL,
+            storagePath: uploaded.storagePath,
+            scannedAt: Date.now(),
+            wasteType: scanData.predictedClass,
+            disposalMethod: scanData.disposal,
+            detectionSource: scanData.source,
+          }),
+          ...previous,
+        ]));
+        return scanId;
+      } catch (error) {
+        if (uploaded) {
+          await deleteScanImage(uploaded.storagePath).catch((cleanupError) => {
+            console.error("Could not clean up failed scan upload", cleanupError);
+          });
+        }
+        throw error;
       }
-      throw error;
+    })();
+
+    pendingScanSaves.set(scanId, savePromise);
+    try {
+      return await savePromise;
+    } finally {
+      if (pendingScanSaves.get(scanId) === savePromise) pendingScanSaves.delete(scanId);
     }
   }
 

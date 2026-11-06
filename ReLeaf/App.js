@@ -9,6 +9,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAppFonts } from "./src/theme/useAppFonts";
 import { colors } from "./src/theme/theme";
 import { ScanHistoryProvider } from "./src/context/ScanHistoryContext";
+import { AuthProvider, useAuth } from "./src/context/AuthContext";
+import LoginScreen from "./src/screens/LoginScreen";
 
 import HomeScreen from "./src/screens/HomeScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
@@ -81,16 +83,19 @@ function MainTabs({ navigation }) {
   );
 }
 
-export default function App() {
+function AuthenticatedApp() {
+  const { user, loading } = useAuth();
   const fontsLoaded = useAppFonts();
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded || loading) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
         <ActivityIndicator color={colors.ink} size="large" />
       </View>
     );
   }
+
+  if (!user) return <LoginScreen />;
 
   return (
     <SafeAreaProvider>
@@ -105,6 +110,14 @@ export default function App() {
         </NavigationContainer>
       </ScanHistoryProvider>
     </SafeAreaProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
   );
 }
 

@@ -6,6 +6,7 @@ backend/model/*.h5
 backend/model/*.pt
 backend/model/class_names.json
 backend/.env
+ReLeaf/.env
 *.pyc
 
 # Mobile app (Node/Expo)

@@ -4,10 +4,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, type, spacing, radii } from "../theme/theme";
 import PrimaryButton from "../components/PrimaryButton";
 import { getApiBaseUrl, setApiBaseUrl } from "../api/config";
+import { useAuth } from "../context/AuthContext";
 
 export default function SettingsScreen() {
   const [url, setUrl] = useState("");
   const [saving, setSaving] = useState(false);
+  const { user, logOut } = useAuth();
 
   useEffect(() => {
     getApiBaseUrl().then(setUrl);
@@ -33,6 +35,12 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={type.h2}>Settings</Text>
+
+        <View style={styles.section}>
+          <Text style={type.h3}>Account</Text>
+          <Text style={type.body}>{user.displayName || user.email}</Text>
+          <PrimaryButton label="Sign out" onPress={logOut} />
+        </View>
 
         <View style={styles.section}>
           <Text style={type.h3}>Backend URL</Text>

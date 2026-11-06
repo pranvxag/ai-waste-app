@@ -17,6 +17,7 @@ npx expo install expo-image-picker
 npx expo install @react-native-async-storage/async-storage
 npx expo install @expo-google-fonts/space-grotesk @expo-google-fonts/inter expo-font
 npx expo install @expo/vector-icons
+npm install firebase
 ```
 
 ## 3. Copy in the provided files
@@ -55,6 +56,24 @@ URL from AsyncStorage first (see `getApiBaseUrl()`/`setApiBaseUrl()` in that fil
 from the **Settings tab** inside the app itself (no rebuild needed to switch networks). Editing
 `API_BASE_URL` in the source is only useful for changing what a fresh install starts with.
 See the backend README for how to find your laptop's local IP or set up an ngrok URL.
+
+## Google login and cloud history
+
+The app uses Firebase Authentication (Google provider) and Cloud Firestore. Copy
+`.env.example` to `.env`, then fill in the Firebase Web app values and the Android and Web
+OAuth client IDs from the same Firebase project. In Firebase Console:
+
+1. Create a Firebase project and register a Web app.
+2. Enable Google under **Authentication → Sign-in method**.
+3. Create a Cloud Firestore database.
+4. Publish [firestore.rules](./firestore.rules).
+5. Add an Android app using package `com.releaf.app` (or the package configured in `app.json`) and
+   create an Android OAuth client ID. Create a Web client ID as well.
+
+Restart Expo after changing `.env`. Google sign-in is required before the main app opens.
+Each signed-in user can read and write only their own `users/{uid}/scans` documents. Scan
+metadata is synced to Firestore; image URIs remain device-local because gallery/camera URIs
+are not portable between phones.
 
 ## 5. Run it
 

@@ -2,6 +2,7 @@
   "expo": {
     "name": "ReLeaf",
     "slug": "ReLeaf",
+    "scheme": "releaf",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,19 +11,31 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.releaf.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-font",
-      "expo-file-system"
-    ]
+      "expo-file-system",
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f253de59-4309-4407-b6f3-32b453541241"
+      }
+    }
   }
 }

@@ -1,0 +1,8 @@
+.env
+.env.*
+__pycache__/
+*.py[cod]
+venv/
+model/*.keras
+model/*.h5
+README.md

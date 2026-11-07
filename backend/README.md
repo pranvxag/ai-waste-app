@@ -29,6 +29,28 @@ source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## Cloud Run preparation
+
+The backend includes a `Dockerfile` that starts Uvicorn on `0.0.0.0` and uses
+Cloud Run's `PORT` variable, defaulting to `8080`. It does not deploy anything.
+Builds require the YOLO weights to be available at `model/yolov8n.pt`; model
+artifacts are intentionally excluded from Git, so provide that file through the
+chosen build artifact or image build context.
+
+Runtime variables:
+
+- `PORT` — supplied by Cloud Run; defaults to `8080` locally.
+- `CORS_ORIGINS` — comma-separated Expo web origins; defaults to `*` for the
+  existing behavior.
+- `MAX_UPLOAD_BYTES` — defaults to `10485760` (10 MiB).
+- `YOLO_MODEL_PATH`, `YOLO_CONFIDENCE_THRESHOLD`, and `GEMINI_MODEL`.
+- `GEMINI_API_KEY`, `GROQ_API_KEY`, and `YOUTUBE_API_KEY`; keep these in
+  Secret Manager or deployment environment configuration, never in the image.
+
+Uploads are validated in memory and rejected above the configured limit; the
+application does not create temporary image files. No Firebase Admin SDK is
+required because Firebase operations are performed by the Expo client.
+
 The YOLO weights download automatically to `backend/model/yolov8n.pt` on the first scan
 (needs internet that once). No manual model copying is required.
 

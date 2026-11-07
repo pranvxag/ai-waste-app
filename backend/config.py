@@ -19,6 +19,18 @@ load_dotenv()
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
 
+# Cloud Run provides PORT; local runs use the same production default.
+PORT = int(os.environ.get("PORT", "8080"))
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+
+# Keep the current permissive behavior by default for Expo web and native
+# clients, while allowing a deployed web origin list to be configured.
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+
 # --- YOLO (primary detector) ------------------------------------------------
 
 # Path to the YOLO weights. Defaults to the lightweight COCO-pretrained yolov8n,

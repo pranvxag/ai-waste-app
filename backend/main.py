@@ -43,7 +43,13 @@ from pydantic import BaseModel
 
 import gemini_service
 import yolo_service
-from config import GEMINI_API_KEY, GEMINI_MAX_IMAGE_EDGE, YOLO_CONFIDENCE_THRESHOLD
+from config import (
+    CORS_ORIGINS,
+    GEMINI_API_KEY,
+    GEMINI_MAX_IMAGE_EDGE,
+    MAX_UPLOAD_BYTES,
+    YOLO_CONFIDENCE_THRESHOLD,
+)
 from llm_service import get_ai_reuse_ideas, get_youtube_link
 from waste_data import get_bucket, get_waste_info
 from logging_utils import log_event, normalize_correlation_id
@@ -64,9 +70,19 @@ async def lifespan(app: FastAPI):
 
     Runs on daemon threads so the server starts serving immediately; a scan
     arriving mid-warm-up simply waits on the same load rather than racing it."""
-    for warm in (yolo_service.warm_up, gemini_service.warm_up):
-        threading.Thread(target=warm, daemon=True).start()
+    for name, warm in (("YOLO", yolo_service.warm_up), ("Gemini", gemini_service.warm_up)):
+        threading.Thread(target=_warm_component, args=(name, warm), daemon=True).start()
     yield
+
+
+def _warm_component(name, warm):
+    try:
+        log_event(logger, logging.INFO, "startup warm-up started", component=name)
+        warm()
+        log_event(logger, logging.INFO, "startup warm-up finished", component=name)
+    except Exception as err:
+        log_event(logger, logging.ERROR, "startup warm-up failed",
+                  component=name, error_type=type(err).__name__)
 
 
 app = FastAPI(title="Waste Identification & Reuse API", lifespan=lifespan)
@@ -75,7 +91,7 @@ app = FastAPI(title="Waste Identification & Reuse API", lifespan=lifespan)
 # Fine for a student project demo; tighten this if you ever deploy publicly long-term.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -121,7 +137,14 @@ async def predict(
                   correlation_id, content_type=file.content_type)
         raise HTTPException(status_code=400, detail="Please upload a JPEG or PNG image.")
 
-    contents = await file.read()
+    contents = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(contents) > MAX_UPLOAD_BYTES:
+        log_event(logger, logging.WARNING, "scan rejected: image too large",
+                  correlation_id, image_bytes=len(contents), max_bytes=MAX_UPLOAD_BYTES)
+        raise HTTPException(
+            status_code=413,
+            detail=f"Images must be {MAX_UPLOAD_BYTES // (1024 * 1024)} MB or smaller.",
+        )
     try:
         image = Image.open(io.BytesIO(contents)).convert("RGB")
     except Exception:

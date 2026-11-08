@@ -7,6 +7,8 @@ backend/model/*.pt
 backend/model/class_names.json
 backend/.env
 ReLeaf/.env
+# Include the YOLOv8 model required by Cloud Run
+!backend/model/yolov8n.pt
 *.pyc
 
 # Mobile app (Node/Expo)

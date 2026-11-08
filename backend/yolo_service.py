@@ -28,7 +28,11 @@ waste-trained YOLO model is plugged in. See config.YOLO_MODEL_PATH for how.
 """
 
 import logging
+import platform
+import sys
 import threading
+from pathlib import Path
+from importlib.metadata import PackageNotFoundError, version
 
 from config import YOLO_MIN_DETECTION_CONF, YOLO_MODEL_PATH
 
@@ -66,9 +70,57 @@ YOLO_CLASS_MAP = {
 
 _model = None
 _load_failed = False
+_diagnostics_logged = False
 # Guards the load: the startup warm-up runs on a background thread, so without
 # this a scan arriving during warm-up would start a second, concurrent load.
 _load_lock = threading.Lock()
+
+
+def _log_runtime_diagnostics():
+    global _diagnostics_logged
+    if _diagnostics_logged:
+        return
+    _diagnostics_logged = True
+
+    model_path = Path(YOLO_MODEL_PATH).expanduser().resolve()
+    def installed_version(package_name):
+        try:
+            return version(package_name)
+        except PackageNotFoundError:
+            return "not installed"
+
+    logger.info(
+        "YOLO runtime diagnostics: python=%s platform=%s ultralytics=%s torch=%s torchvision=%s "
+        "model_path=%s exists=%s size_mb=%.2f",
+        sys.version.split()[0],
+        platform.platform(),
+        installed_version("ultralytics"),
+        installed_version("torch"),
+        installed_version("torchvision"),
+        model_path,
+        model_path.is_file(),
+        model_path.stat().st_size / (1024 * 1024) if model_path.is_file() else 0,
+    )
+
+    try:
+        import ultralytics
+        from ultralytics import YOLO
+        logger.info("YOLO import succeeded: ultralytics=%s", ultralytics.__version__)
+        del YOLO
+    except Exception:
+        logger.exception("YOLO import failed")
+
+    try:
+        import torch
+        logger.info("Torch runtime: torch=%s cuda_available=%s", torch.__version__, torch.cuda.is_available())
+    except Exception:
+        logger.exception("Torch import failed")
+
+    try:
+        import torchvision
+        logger.info("Torchvision runtime: torchvision=%s", torchvision.__version__)
+    except Exception:
+        logger.exception("Torchvision import failed")
 
 
 def _load_model_if_needed():
@@ -86,14 +138,16 @@ def _load_model_if_needed():
     with _load_lock:
         if _model is not None or _load_failed:  # another thread won the race
             return
+        _log_runtime_diagnostics()
+        model_path = Path(YOLO_MODEL_PATH).expanduser().resolve()
         try:
             from ultralytics import YOLO  # imported here to keep server startup fast
 
-            _model = YOLO(YOLO_MODEL_PATH)
-            logger.info("YOLO model loaded from %s", YOLO_MODEL_PATH)
-        except Exception as err:
+            _model = YOLO(str(model_path))
+            logger.info("YOLO model initialization succeeded: path=%s", model_path)
+        except Exception:
             _load_failed = True
-            logger.warning("YOLO model unavailable (%s) - scans will fall back to Gemini", err)
+            logger.exception("YOLO model initialization failed: path=%s", model_path)
 
 
 def warm_up():
@@ -114,10 +168,15 @@ def warm_up():
         return
 
     try:
-        _model.predict(Image.new("RGB", (640, 640)), conf=YOLO_MIN_DETECTION_CONF, verbose=False)
+        _model.predict(
+            Image.new("RGB", (640, 640)),
+            conf=YOLO_MIN_DETECTION_CONF,
+            device="cpu",
+            verbose=False,
+        )
         logger.info("YOLO warm-up complete - scans will now be fast")
-    except Exception as err:
-        logger.warning("YOLO warm-up inference failed (%s)", err)
+    except Exception:
+        logger.exception("YOLO warm-up inference failed after model initialization")
 
 
 def is_available() -> bool:
@@ -151,7 +210,12 @@ def detect(image) -> dict | None:
         # conf= here is the raw reporting floor, NOT the high/low decision
         # threshold - it is deliberately low so that weak detections are still
         # returned and can be logged before being escalated to Gemini.
-        results = _model.predict(image, conf=YOLO_MIN_DETECTION_CONF, verbose=False)
+        results = _model.predict(
+            image,
+            conf=YOLO_MIN_DETECTION_CONF,
+            device="cpu",
+            verbose=False,
+        )
     except Exception as err:
         logger.warning("YOLO inference failed (%s) - falling back to Gemini", err)
         return None

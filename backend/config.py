@@ -34,7 +34,7 @@ CORS_ORIGINS = [
 # --- YOLO (primary detector) ------------------------------------------------
 
 # Path to the YOLO weights. Defaults to the lightweight COCO-pretrained yolov8n,
-# which ultralytics downloads to this path automatically on first use.
+# which must be present at this path in the Cloud Run image.
 #
 # TO PLUG IN A CUSTOM WASTE-TRAINED MODEL LATER: point this at your own .pt file
 # (e.g. YOLO_MODEL_PATH=/path/to/waste_yolo_best.pt in backend/.env) and update

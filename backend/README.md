@@ -3,8 +3,8 @@ title: ReLeaf Waste Identification API
 emoji: ♻️
 colorFrom: green
 colorTo: blue
-sdk: docker
-app_port: 7860
+sdk: gradio
+app_file: app.py
 suggested_hardware: cpu-basic
 ---
 
@@ -41,11 +41,9 @@ pip install -r requirements.txt
 
 ## Hugging Face Spaces deployment
 
-This directory is a Docker Space. The included `Dockerfile` starts Uvicorn on
-`0.0.0.0:7860`, which is the port declared in the Space metadata above.
-Hugging Face builds the image from this directory and gives it an HTTPS URL.
-The free CPU hardware is enough for the current CPU inference path, but the
-first startup can take several minutes while packages and YOLO weights install.
+This directory is a Gradio Space. `app.py` starts the existing FastAPI app and
+mounts a small Gradio status page at `/ui`. The same Space URL serves both the
+Gradio page and the FastAPI endpoints used by Expo.
 
 Runtime variables:
 
@@ -66,16 +64,17 @@ The YOLO weights download automatically to `backend/model/yolov8n.pt` on the fir
 ### Create and configure the Space
 
 1. Sign in at [huggingface.co](https://huggingface.co/) and create a new **Space**.
-2. Choose **Docker** as the SDK and **CPU basic** hardware.
-3. Upload or push the contents of this `backend/` directory to the Space repository.
-   The Space repository root must contain `Dockerfile`, `requirements.txt`, `main.py`,
-   and this `README.md`.
+2. Choose **Gradio** as the SDK and **CPU basic** hardware.
+3. Put the contents of this `backend/` directory in the Space repository root.
+   The Space repository root must contain `app.py`, `requirements.txt`, `main.py`,
+   and this `README.md`. The `Dockerfile` is not used by a Gradio Space.
 4. Open **Settings → Variables and secrets** and add `GEMINI_API_KEY`,
    `GROQ_API_KEY`, and `YOUTUBE_API_KEY` as secrets. Do not upload `.env`.
 5. Wait for the build to finish, then open
    `https://<your-hugging-face-username>-<space-name>.hf.space/health`.
    A healthy response has `"status": "ok"`. `model_ready` may briefly be false
    while the background warm-up is loading YOLO.
+6. Open `/ui` in a browser to confirm the Gradio runtime is also available.
 
 If the Space is private, the mobile app cannot call it anonymously. Keep the
 Space public for this app unless you add an authenticated proxy; API keys remain

@@ -25,7 +25,8 @@ Run locally:
     pip install -r requirements.txt
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-For Hugging Face Spaces, the Docker image starts on port 7860.
+For Hugging Face Spaces, `app.py` provides the Gradio entry point and mounts
+this FastAPI application at the Space root.
 """
 
 import io

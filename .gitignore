@@ -7,7 +7,7 @@ backend/model/*.pt
 backend/model/class_names.json
 backend/.env
 ReLeaf/.env
-# Include the YOLOv8 model required by Cloud Run
+# Keep the default YOLO model available to container builds/runtime downloads
 !backend/model/yolov8n.pt
 *.pyc
 

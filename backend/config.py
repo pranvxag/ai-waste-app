@@ -18,9 +18,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
-
-# Cloud Run provides PORT; local runs use the same production default.
-PORT = int(os.environ.get("PORT", "8080"))
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
 # Keep the current permissive behavior by default for Expo web and native
@@ -34,7 +31,7 @@ CORS_ORIGINS = [
 # --- YOLO (primary detector) ------------------------------------------------
 
 # Path to the YOLO weights. Defaults to the lightweight COCO-pretrained yolov8n,
-# which must be present at this path in the Cloud Run image.
+# which must be present at this path in the container image.
 #
 # TO PLUG IN A CUSTOM WASTE-TRAINED MODEL LATER: point this at your own .pt file
 # (e.g. YOLO_MODEL_PATH=/path/to/waste_yolo_best.pt in backend/.env) and update

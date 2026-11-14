@@ -55,7 +55,9 @@ ReLeaf/
 URL from AsyncStorage first (see `getApiBaseUrl()`/`setApiBaseUrl()` in that file), which you set
 from the **Settings tab** inside the app itself (no rebuild needed to switch networks). Editing
 `API_BASE_URL` in the source is only useful for changing what a fresh install starts with.
-See the backend README for how to find your laptop's local IP or set up an ngrok URL.
+For deployment, follow the Hugging Face Spaces instructions in the backend README.
+For local development, use your laptop's local IP in this field when the phone and
+laptop are on the same Wi-Fi network.
 
 ## Google login and cloud history
 

@@ -1,3 +1,13 @@
+---
+title: ReLeaf Waste Identification API
+emoji: ♻️
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+suggested_hardware: cpu-basic
+---
+
 # Backend — Waste Identification & Reuse API
 
 ## How recognition works
@@ -29,23 +39,22 @@ source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Cloud Run preparation
+## Hugging Face Spaces deployment
 
-The backend includes a `Dockerfile` that starts Uvicorn on `0.0.0.0` and uses
-Cloud Run's `PORT` variable, defaulting to `8080`. It does not deploy anything.
-Builds require the YOLO weights to be available at `model/yolov8n.pt`; model
-artifacts are intentionally excluded from Git, so provide that file through the
-chosen build artifact or image build context.
+This directory is a Docker Space. The included `Dockerfile` starts Uvicorn on
+`0.0.0.0:7860`, which is the port declared in the Space metadata above.
+Hugging Face builds the image from this directory and gives it an HTTPS URL.
+The free CPU hardware is enough for the current CPU inference path, but the
+first startup can take several minutes while packages and YOLO weights install.
 
 Runtime variables:
 
-- `PORT` — supplied by Cloud Run; defaults to `8080` locally.
 - `CORS_ORIGINS` — comma-separated Expo web origins; defaults to `*` for the
   existing behavior.
 - `MAX_UPLOAD_BYTES` — defaults to `10485760` (10 MiB).
 - `YOLO_MODEL_PATH`, `YOLO_CONFIDENCE_THRESHOLD`, and `GEMINI_MODEL`.
 - `GEMINI_API_KEY`, `GROQ_API_KEY`, and `YOUTUBE_API_KEY`; keep these in
-  Secret Manager or deployment environment configuration, never in the image.
+  Space Settings → Variables and secrets, never in the repository or image.
 
 Uploads are validated in memory and rejected above the configured limit; the
 application does not create temporary image files. No Firebase Admin SDK is
@@ -53,6 +62,24 @@ required because Firebase operations are performed by the Expo client.
 
 The YOLO weights download automatically to `backend/model/yolov8n.pt` on the first scan
 (needs internet that once). No manual model copying is required.
+
+### Create and configure the Space
+
+1. Sign in at [huggingface.co](https://huggingface.co/) and create a new **Space**.
+2. Choose **Docker** as the SDK and **CPU basic** hardware.
+3. Upload or push the contents of this `backend/` directory to the Space repository.
+   The Space repository root must contain `Dockerfile`, `requirements.txt`, `main.py`,
+   and this `README.md`.
+4. Open **Settings → Variables and secrets** and add `GEMINI_API_KEY`,
+   `GROQ_API_KEY`, and `YOUTUBE_API_KEY` as secrets. Do not upload `.env`.
+5. Wait for the build to finish, then open
+   `https://<your-hugging-face-username>-<space-name>.hf.space/health`.
+   A healthy response has `"status": "ok"`. `model_ready` may briefly be false
+   while the background warm-up is loading YOLO.
+
+If the Space is private, the mobile app cannot call it anonymously. Keep the
+Space public for this app unless you add an authenticated proxy; API keys remain
+private because only the backend uses them.
 
 ### Using a custom waste-trained YOLO model
 
@@ -116,48 +143,15 @@ overridable from `.env`. Raise it to send more scans to Gemini (more accurate, s
 API usage); lower it to trust YOLO more often. It is the *detection confidence*, not the
 IoU/NMS threshold — changing it doesn't affect how overlapping boxes are merged.
 
-## Run (two terminals, every time)
+## Run locally
 
-The app talks to the backend over a permanent ngrok tunnel, so two things need to be
-running together whenever you want the app to actually reach the backend — locally,
-on your phone, or anywhere else:
-
-**Terminal 1 — the backend itself:**
+Start the backend from this directory:
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
-Check `http://localhost:8000/health` — should show `"model_ready": true` once the
-model files are in place.
 
-**Terminal 2 — the tunnel** (ngrok is installed at `C:\Users\Dell\bin\ngrok.exe`,
-already authenticated and on PATH — just run):
-```bash
-ngrok http --url=constant-attribute-showplace.ngrok-free.dev 8000
-```
-
-Then confirm the whole chain works from anywhere (not just localhost):
-```bash
-curl https://constant-attribute-showplace.ngrok-free.dev/health
-```
-should return `{"status":"ok","model_ready":true}`. This is the URL the app is
-already configured to use by default (`API_BASE_URL` in `ReLeaf/src/api/config.js`)
-— no Settings-screen changes needed unless that domain ever changes.
-
-Leave both terminals open for as long as you want the backend reachable; closing
-either one breaks the connection (ngrok only relays to a backend that's actually
-running — it can't serve anything on its own). See "Before the final demo" below for
-what that means at demo time, and the root `README.md` for why a tunnel is used
-instead of a real deployment.
-
-### Setting this up on a different machine
-
-The above only works as-is on the machine that already has the ngrok authtoken
-configured. On a fresh machine:
-```bash
-ngrok config add-authtoken <your-authtoken>   # once per machine, from dashboard.ngrok.com
-```
-then the same `ngrok http --url=...` command works. The static domain itself belongs
-to the ngrok account, not the machine, so it stays the same everywhere.
+Check `http://localhost:8000/health`. For a phone on the same Wi-Fi, save
+`http://<your-laptop-ip>:8000` in the app's Settings screen.
 
 ## Endpoints
 
@@ -215,19 +209,19 @@ curl -X POST -H "Content-Type: application/json" \
   http://localhost:8000/enhance-reuse
 ```
 
-## Alternative: same WiFi, no tunnel
+## Connect an Expo/EAS build
 
-If ngrok is unavailable for some reason, use your laptop's local IP instead (find it
-with `ipconfig`, under your Wi-Fi adapter's "IPv4 Address") and set it in the app's
-Settings screen. Only works when your phone/laptop are on the same WiFi, and changes
-whenever you switch networks — the ngrok tunnel above doesn't have either limitation.
+After the Space is healthy, set `EXPO_PUBLIC_API_BASE_URL` to its HTTPS URL when
+building the app. For local builds, create `ReLeaf/.env` from `.env.example` and add:
 
-## Before the final demo
+```dotenv
+EXPO_PUBLIC_API_BASE_URL=https://<your-hugging-face-username>-<space-name>.hf.space
+```
 
-Start both terminals (`uvicorn` and `ngrok`) a few minutes before presenting, not live
-— confirm `curl https://constant-attribute-showplace.ngrok-free.dev/health` works first.
-This still depends on your laptop being on and connected; for something that doesn't,
-deploy this backend to a free host (Render, Railway, Hugging Face Spaces) instead.
+For EAS, configure the same variable in the EAS project environment (or selected
+build profile) and rebuild. The URL is embedded during the build; changing it in
+EAS does not change an already-installed binary. You can also paste the Space URL
+into the app's Settings screen without rebuilding.
 
 ## What to test first
 

@@ -84,9 +84,10 @@ server-side; the mobile app never holds a key.
 
 ## Run order
 
-1. Start the backend (`backend/README.md`), confirm `/health` shows `model_ready: true`.
-2. Set the backend URL in the app's Settings screen (or `ReLeaf/src/api/config.js` as
-   the fallback default).
+1. Deploy the backend to Hugging Face Spaces using [`backend/README.md`](./backend/README.md)
+   and confirm its `/health` endpoint responds.
+2. Set `EXPO_PUBLIC_API_BASE_URL` to the Space URL in `ReLeaf/.env` before an Expo/EAS
+   build, or paste the URL into the app's Settings screen.
 3. Start the Expo app (`ReLeaf/README.md`) and run through the full scan → identify →
    result flow.
 

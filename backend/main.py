@@ -25,9 +25,7 @@ Run locally:
     pip install -r requirements.txt
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-Then expose it to your phone/Expo app during development with, e.g., ngrok:
-    ngrok http 8000
-and point the Expo app at the https URL ngrok gives you.
+For Hugging Face Spaces, the Docker image starts on port 7860.
 """
 
 import io

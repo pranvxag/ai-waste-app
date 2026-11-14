@@ -45,13 +45,13 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={type.h3}>Backend URL</Text>
           <Text style={[type.body, styles.hint]}>
-            Where the app looks for the FastAPI server (e.g. your laptop's local IP
-            or an ngrok URL). Change this if scans stop working after switching networks.
+            Where the app looks for the FastAPI server. Use your Hugging Face Space
+            URL for a deployed build, or your laptop's local URL during development.
           </Text>
           <TextInput
             value={url}
             onChangeText={setUrl}
-            placeholder="http://192.168.1.5:8000"
+            placeholder="https://username-space-name.hf.space"
             placeholderTextColor={colors.inkSoft}
             autoCapitalize="none"
             autoCorrect={false}

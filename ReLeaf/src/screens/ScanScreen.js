@@ -6,13 +6,13 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, type, spacing, radii } from "../theme/theme";
 import PrimaryButton from "../components/PrimaryButton";
 import SecondaryButton from "../components/SecondaryButton";
+import CloseButton from "../components/CloseButton";
 import { identifyItem } from "../api/predict";
-import { useImpact } from "../context/ImpactContext";
+import { createScanId, logger } from "../utils/logging";
 
 export default function ScanScreen({ navigation }) {
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
-  const { recordScan } = useImpact();
 
   async function takePhoto() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -35,12 +35,16 @@ export default function ScanScreen({ navigation }) {
   }
 
   async function handleIdentify() {
+    if (!imageUri || loading) return;
     setLoading(true);
+    const scanId = createScanId();
+    logger.info("ScanScreen", "Starting scan", { scanId });
     try {
-      const result = await identifyItem(imageUri);
-      recordScan();
-      navigation.replace("Result", { imageUri, result });
+      const result = await identifyItem(imageUri, scanId);
+      logger.info("ScanScreen", "Scan identified", { scanId, source: result.source });
+      navigation.replace("Result", { imageUri, result, scanId });
     } catch (err) {
+      logger.error("ScanScreen", "Scan identification failed", { scanId, error: err });
       Alert.alert(
         "Couldn't identify that item",
         err.message || "Check that the backend server is running and reachable."
@@ -52,6 +56,7 @@ export default function ScanScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+      <CloseButton onPress={() => navigation.popToTop()} />
       <View style={styles.content}>
         <Text style={type.h2}>Scan an item</Text>
         <Text style={[type.body, { marginBottom: spacing.md }]}>

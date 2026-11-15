@@ -17,6 +17,7 @@ npx expo install expo-image-picker
 npx expo install @react-native-async-storage/async-storage
 npx expo install @expo-google-fonts/space-grotesk @expo-google-fonts/inter expo-font
 npx expo install @expo/vector-icons
+npm install firebase
 ```
 
 ## 3. Copy in the provided files
@@ -31,7 +32,7 @@ ReLeaf/
       theme.js
       useAppFonts.js
     context/
-      ImpactContext.js
+      ScanHistoryContext.js
     api/
       config.js
       predict.js
@@ -42,7 +43,6 @@ ReLeaf/
       SecondaryButton.js
       StepItem.js
       MaterialIdCard.js
-      ReuseIdeaCard.js
     screens/
       HomeScreen.js
       ScanScreen.js
@@ -51,9 +51,35 @@ ReLeaf/
 
 ## 4. Point it at your backend
 
-Open `src/api/config.js` and set `API_BASE_URL` to wherever your FastAPI backend is reachable —
-your laptop's local IP (e.g. `http://192.168.1.5:8000`) if your phone's on the same WiFi, or your
-ngrok URL. See the backend README for how to find this.
+`src/api/config.js`'s `API_BASE_URL` is just the fallback default — the app reads the backend
+URL from AsyncStorage first (see `getApiBaseUrl()`/`setApiBaseUrl()` in that file), which you set
+from the **Settings tab** inside the app itself (no rebuild needed to switch networks). Editing
+`API_BASE_URL` in the source is only useful for changing what a fresh install starts with.
+For deployment, follow the Hugging Face Spaces instructions in the backend README.
+For local development, use your laptop's local IP in this field when the phone and
+laptop are on the same Wi-Fi network.
+
+## Google login and cloud history
+
+The app uses Firebase Authentication (Google provider) and Cloud Firestore. Copy
+`.env.example` to `.env`, then fill in the Firebase Web app values and the Android and Web
+OAuth client IDs from the same Firebase project. In Firebase Console:
+
+1. Create a Firebase project and register a Web app.
+2. Enable Google under **Authentication → Sign-in method**.
+3. Create a Cloud Firestore database.
+4. Publish [firestore.rules](./firestore.rules).
+5. Add an Android app using package `com.releaf.app` (or the package configured in `app.json`) and
+   create an Android OAuth client ID. Create a Web client ID as well.
+
+Restart Expo after changing `.env`. Google sign-in is required before the main app opens.
+Each signed-in user can read and write only their own `users/{uid}/scans` documents. Scan
+metadata is synced to Firestore; image URIs remain device-local because gallery/camera URIs
+are not portable between phones.
+
+Frontend events use the redacted logger in `src/utils/logging.js`. Scan and API
+events carry a stable correlation ID; credentials, tokens, private URLs, and
+personal profile fields are not written to logs.
 
 ## 5. Run it
 
@@ -66,8 +92,8 @@ Scan the QR code with the Expo Go app on your phone (same WiFi network as your l
 ## What to test first
 
 1. Home screen loads with fonts showing correctly (Space Grotesk headings, Inter body text) — if fonts look like the system default, the font loading hook isn't working; check the console for errors.
-2. Tap "Scan an item" → try both "Take photo" and "Choose from gallery".
-3. After picking an image, tap "Identify this item" — this calls your backend. If it fails, double check `API_BASE_URL` and that your backend server is actually running and reachable from your phone (same WiFi is the most common gotcha).
+2. Tap the camera button in the middle of the tab bar → try both "Take photo" and "Choose from gallery".
+3. After picking an image, tap "Identify this item" — this calls your backend. If it fails, double check the Backend URL in the Settings tab and that your backend server is actually running and reachable from your phone (same WiFi is the most common gotcha).
 4. Confirm the Result screen shows the colored category badge, disposal text, and reuse idea cards scrolling horizontally.
 5. Go back to Home — the "items identified so far" counter should now show 1, and should persist even if you close and reopen the app (it's saved via AsyncStorage).
 

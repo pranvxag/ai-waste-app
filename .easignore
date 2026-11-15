@@ -12,7 +12,7 @@
 # Non-build project directories
 /backend/
 /docs/
-/venv/
+venv/
 /.agents/
 /.claude/
 /.github/

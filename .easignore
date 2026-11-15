@@ -1,0 +1,45 @@
+# Expo project dependencies and generated output
+**/node_modules/
+**/.expo/
+**/dist/
+**/web-build/
+**/android/
+**/ios/
+**/.kotlin/
+**/.metro-health-check*
+**/coverage/
+
+# Non-build project directories
+/backend/
+/docs/
+/venv/
+/.agents/
+/.claude/
+/.github/
+/.vscode/
+/.git/
+
+# Local logs, caches, and temporary files
+**/*.log
+**/npm-debug.*
+**/yarn-debug.*
+**/yarn-error.*
+**/*.tsbuildinfo
+**/*.orig.*
+**/.DS_Store
+
+# Local credentials and signing artifacts
+**/.env
+**/*.jks
+**/*.p8
+**/*.p12
+**/*.key
+**/*.mobileprovision
+**/*.pem
+
+# Documentation and development-only material
+/CONTRIBUTING*
+/README*
+/skills-lock.json
+**/README*
+**/*.ipynb

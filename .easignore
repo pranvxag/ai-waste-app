@@ -42,3 +42,13 @@
 /skills-lock.json
 **/README*
 **/*.ipynb
+
+# Required Expo project files
+!/ReLeaf/package.json
+!/ReLeaf/package-lock.json
+!/ReLeaf/app.json
+!/ReLeaf/eas.json
+!/ReLeaf/App.js
+!/ReLeaf/index.js
+!/ReLeaf/src/
+!/ReLeaf/assets/

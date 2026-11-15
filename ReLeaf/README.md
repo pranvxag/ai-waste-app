@@ -55,7 +55,8 @@ ReLeaf/
 URL from AsyncStorage first (see `getApiBaseUrl()`/`setApiBaseUrl()` in that file), which you set
 from the **Settings tab** inside the app itself (no rebuild needed to switch networks). Editing
 `API_BASE_URL` in the source is only useful for changing what a fresh install starts with.
-See the backend README for how to find your laptop's local IP or set up an ngrok URL.
+The default backend URL is the deployed Cloud Run service. You can override it from
+the Settings tab if you need to use another backend.
 
 ## Google login and cloud history
 

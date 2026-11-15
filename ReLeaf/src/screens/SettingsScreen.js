@@ -46,7 +46,7 @@ export default function SettingsScreen() {
           <Text style={type.h3}>Backend URL</Text>
           <Text style={[type.body, styles.hint]}>
             Where the app looks for the FastAPI server (e.g. your laptop's local IP
-            or an ngrok URL). Change this if scans stop working after switching networks.
+            or a deployed HTTPS URL). Change this if you use a different backend.
           </Text>
           <TextInput
             value={url}

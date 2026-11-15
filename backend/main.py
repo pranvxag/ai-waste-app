@@ -25,9 +25,8 @@ Run locally:
     pip install -r requirements.txt
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-Then expose it to your phone/Expo app during development with, e.g., ngrok:
-    ngrok http 8000
-and point the Expo app at the https URL ngrok gives you.
+Then point the Expo app at the deployed backend URL, or at the local server URL
+when testing on the same network.
 """
 
 import io

@@ -3,14 +3,6 @@ import { File, UploadType } from "expo-file-system";
 import { getApiBaseUrl } from "./config";
 import { logger } from "../utils/logging";
 
-// Skips ngrok's free-tier "you're about to visit an ngrok site" browser
-// warning interstitial, which otherwise intercepts requests that look like
-// they're coming from a browser and returns an HTML page with no CORS
-// headers instead of the real API response (breaks every fetch() call with
-// a CORS error, even though the backend's own CORS setup is fine). Harmless
-// to send this against a non-ngrok backend URL - it's just ignored.
-const NGROK_HEADERS = { "ngrok-skip-browser-warning": "true" };
-
 /**
  * Sends the photo at `imageUri` to the backend and returns the parsed JSON result:
  * { predicted_class, confidence, category, disposal }
@@ -34,7 +26,7 @@ export async function identifyItem(imageUri, correlationId) {
       method: "POST",
       body: formData,
       // Do not set Content-Type manually - fetch sets the multipart boundary itself.
-      headers: { ...NGROK_HEADERS, "X-Request-ID": correlationId },
+      headers: { "X-Request-ID": correlationId },
     });
 
     if (!response.ok) {
@@ -55,7 +47,7 @@ export async function identifyItem(imageUri, correlationId) {
     uploadType: UploadType.MULTIPART,
     fieldName: "file",
     mimeType: "image/jpeg",
-    headers: { ...NGROK_HEADERS, "X-Request-ID": correlationId },
+    headers: { "X-Request-ID": correlationId },
   });
 
   let body;
@@ -88,7 +80,7 @@ export async function getEnhancedIdeas(predictedClass, category, exclude = [], c
   const baseUrl = await getApiBaseUrl();
   const response = await fetch(`${baseUrl}/enhance-reuse`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...NGROK_HEADERS, "X-Request-ID": correlationId },
+    headers: { "Content-Type": "application/json", "X-Request-ID": correlationId },
     body: JSON.stringify({ predicted_class: predictedClass, category, exclude }),
   });
 
@@ -111,7 +103,7 @@ export async function getEnhancedIdeas(predictedClass, category, exclude = [], c
 export async function getWasteInfo(predictedClass, correlationId) {
   const baseUrl = await getApiBaseUrl();
   const response = await fetch(`${baseUrl}/waste-info/${encodeURIComponent(predictedClass)}`, {
-    headers: { ...NGROK_HEADERS, "X-Request-ID": correlationId },
+    headers: { "X-Request-ID": correlationId },
   });
 
   if (!response.ok) {

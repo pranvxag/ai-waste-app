@@ -116,48 +116,29 @@ overridable from `.env`. Raise it to send more scans to Gemini (more accurate, s
 API usage); lower it to trust YOLO more often. It is the *detection confidence*, not the
 IoU/NMS threshold — changing it doesn't affect how overlapping boxes are merged.
 
-## Run (two terminals, every time)
+## Run locally
 
-The app talks to the backend over a permanent ngrok tunnel, so two things need to be
-running together whenever you want the app to actually reach the backend — locally,
-on your phone, or anywhere else:
+To run the backend locally:
 
-**Terminal 1 — the backend itself:**
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
 Check `http://localhost:8000/health` — should show `"model_ready": true` once the
 model files are in place.
 
-**Terminal 2 — the tunnel** (ngrok is installed at `C:\Users\Dell\bin\ngrok.exe`,
-already authenticated and on PATH — just run):
-```bash
-ngrok http --url=constant-attribute-showplace.ngrok-free.dev 8000
+The deployed backend is available at:
+
+```text
+https://releaf.cloud.run
 ```
 
-Then confirm the whole chain works from anywhere (not just localhost):
+Confirm the deployed service:
 ```bash
-curl https://constant-attribute-showplace.ngrok-free.dev/health
+curl https://releaf.cloud.run/health
 ```
-should return `{"status":"ok","model_ready":true}`. This is the URL the app is
-already configured to use by default (`API_BASE_URL` in `ReLeaf/src/api/config.js`)
-— no Settings-screen changes needed unless that domain ever changes.
-
-Leave both terminals open for as long as you want the backend reachable; closing
-either one breaks the connection (ngrok only relays to a backend that's actually
-running — it can't serve anything on its own). See "Before the final demo" below for
-what that means at demo time, and the root `README.md` for why a tunnel is used
-instead of a real deployment.
-
-### Setting this up on a different machine
-
-The above only works as-is on the machine that already has the ngrok authtoken
-configured. On a fresh machine:
-```bash
-ngrok config add-authtoken <your-authtoken>   # once per machine, from dashboard.ngrok.com
-```
-then the same `ngrok http --url=...` command works. The static domain itself belongs
-to the ngrok account, not the machine, so it stays the same everywhere.
+It should return `"status":"ok"`, `"model_ready":true`, and
+`"gemini_configured":true`.
 
 ## Endpoints
 
@@ -214,20 +195,6 @@ curl -X POST -H "Content-Type: application/json" \
   -d '{"predicted_class": "plastic", "category": "recyclable"}' \
   http://localhost:8000/enhance-reuse
 ```
-
-## Alternative: same WiFi, no tunnel
-
-If ngrok is unavailable for some reason, use your laptop's local IP instead (find it
-with `ipconfig`, under your Wi-Fi adapter's "IPv4 Address") and set it in the app's
-Settings screen. Only works when your phone/laptop are on the same WiFi, and changes
-whenever you switch networks — the ngrok tunnel above doesn't have either limitation.
-
-## Before the final demo
-
-Start both terminals (`uvicorn` and `ngrok`) a few minutes before presenting, not live
-— confirm `curl https://constant-attribute-showplace.ngrok-free.dev/health` works first.
-This still depends on your laptop being on and connected; for something that doesn't,
-deploy this backend to a free host (Render, Railway, Hugging Face Spaces) instead.
 
 ## What to test first
 

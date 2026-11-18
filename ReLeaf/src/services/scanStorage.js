@@ -1,4 +1,6 @@
 import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
+import { Platform } from "react-native";
+import { File } from "expo-file-system";
 import { storage } from "../firebase";
 import { logger } from "../utils/logging";
 
@@ -15,17 +17,37 @@ export async function uploadScanImage(imageUri, uid, scanId, onProgress) {
   if (!storage) throw new Error("Firebase Storage is not configured.");
   if (!imageUri) throw new Error("The scan image is unavailable.");
 
-  const response = await fetch(imageUri);
-  if (!response.ok) throw new Error("Could not read the scan image.");
-  const blob = await response.blob();
-  if (blob.size > MAX_IMAGE_BYTES) throw new Error("Images must be 10 MB or smaller.");
+  let contentType;
+  let uploadData;
 
-  const contentType = getImageType(blob);
+  if (Platform.OS === "web") {
+    const response = await fetch(imageUri);
+    if (!response.ok) throw new Error("Could not read the scan image.");
+    const blob = await response.blob();
+    if (blob.size > MAX_IMAGE_BYTES) throw new Error("Images must be 10 MB or smaller.");
+    contentType = getImageType(blob);
+    uploadData = blob;
+  } else {
+    const file = new File(imageUri);
+    if (!file.exists) throw new Error("Could not read the scan image.");
+    if (file.size == null) throw new Error("Could not read the scan image.");
+    if (file.size > MAX_IMAGE_BYTES) throw new Error("Images must be 10 MB or smaller.");
+
+    const extension = file.extension.toLowerCase();
+    contentType =
+      extension === ".png"
+        ? "image/png"
+        : extension === ".webp"
+          ? "image/webp"
+          : "image/jpeg";
+    uploadData = await file.arrayBuffer();
+  }
+
   if (!contentType) throw new Error("Only JPEG, PNG, and WebP images are supported.");
 
   const extension = contentType.split("/")[1];
   const storagePath = `users/${uid}/scans/${scanId}.${extension}`;
-  const upload = uploadBytesResumable(ref(storage, storagePath), blob, { contentType });
+  const upload = uploadBytesResumable(ref(storage, storagePath), uploadData, { contentType });
 
   await new Promise((resolve, reject) => {
     upload.on(
